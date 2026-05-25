@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block page_title %}Alertas{% endblock %}
+{% block page_subtitle %}Cobrancas financeiras e tentativas de nova venda.{% endblock %}
+
+{% block content %}
+<section class="split">
+  <div class="panel">
+    <div class="panel-head"><h2>Cobrar clientes</h2></div>
+    <div class="list">
+      {% for parcela in parcelas %}
+        <div class="list-row">
+          <div>
+            <strong>{{ parcela.venda.cliente.nome }}</strong>
+            <span>{{ parcela.venda.titulo }} - parcela {{ parcela.numero }} - vence {{ parcela.vencimento|date:"d/m/Y" }}</span>
+            <small>{{ parcela.venda.cliente.telefone }} {{ parcela.venda.cliente.email }}</small>
+          </div>
+          <b>R$ {{ parcela.valor|floatformat:2 }}</b>
+        </div>
+      {% empty %}
+        <p class="empty">Nenhuma cobranca para hoje.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Fechar nova venda</h2></div>
+    <div class="list">
+      {% for cliente in clientes_recompra %}
+        <div class="list-row">
+          <div>
+            <strong>{{ cliente.nome }}</strong>
+            <span>Alerta iniciado em {{ cliente.data_alerta_recompra|date:"d/m/Y" }}</span>
+            <small>Proxima oportunidade: {{ cliente.proxima_oportunidade|date:"d/m/Y" }} - {{ cliente.telefone }}</small>
+          </div>
+          <a class="icon-link" href="{% url 'cliente_editar' cliente.pk %}" title="Editar cliente"><i data-lucide="pencil"></i></a>
+        </div>
+      {% empty %}
+        <p class="empty">Nenhum cliente dentro da janela de 10 meses.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}
+

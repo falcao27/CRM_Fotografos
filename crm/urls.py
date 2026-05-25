@@ -1,0 +1,41 @@
+from django.urls import path
+
+from . import views
+
+
+urlpatterns = [
+    path("", views.dashboard, name="dashboard"),
+    path("clientes/", views.clientes, name="clientes"),
+    path("clientes/novo/", views.cliente_form, name="cliente_novo"),
+    path("clientes/<int:pk>/editar/", views.cliente_form, name="cliente_editar"),
+    path("clientes/<int:pk>/excluir/", views.cliente_excluir, name="cliente_excluir"),
+    path("financeiro/", views.financeiro, name="financeiro"),
+    path("financeiro/cliente/<int:cliente_id>/", views.financeiro_cliente_painel, name="financeiro_cliente_painel"),
+    path("financeiro/nova/", views.venda_form, name="venda_nova"),
+    path("financeiro/<int:pk>/editar/", views.venda_form, name="venda_editar"),
+    path("financeiro/<int:pk>/excluir/", views.venda_excluir, name="venda_excluir"),
+    path("financeiro/<int:venda_id>/parcelas/nova/", views.parcela_form, name="parcela_nova"),
+    path("parcelas/<int:pk>/editar/", views.parcela_form, name="parcela_editar"),
+    path("parcelas/<int:pk>/excluir/", views.parcela_excluir, name="parcela_excluir"),
+    path("despesas/", views.despesas, name="despesas"),
+    path("despesas/nova/", views.despesa_form, name="despesa_nova"),
+    path("despesas/<int:pk>/editar/", views.despesa_form, name="despesa_editar"),
+    path("despesas/<int:pk>/excluir/", views.despesa_excluir, name="despesa_excluir"),
+    path("pipeline/", views.pipeline, name="pipeline"),
+    path("pipeline/nova/", views.oportunidade_form, name="oportunidade_nova"),
+    path("pipeline/<int:pk>/editar/", views.oportunidade_form, name="oportunidade_editar"),
+    path("pipeline/<int:pk>/mover/<str:etapa>/", views.oportunidade_mover, name="oportunidade_mover"),
+    path("pipeline/<int:pk>/excluir/", views.oportunidade_excluir, name="oportunidade_excluir"),
+    path("agenda/", views.agenda, name="agenda"),
+    path("agenda/nova/", views.tarefa_form, name="tarefa_nova"),
+    path("agenda/<int:pk>/editar/", views.tarefa_form, name="tarefa_editar"),
+    path("agenda/<int:pk>/excluir/", views.tarefa_excluir, name="tarefa_excluir"),
+    path("documentos/", views.documentos, name="documentos"),
+    path("documentos/novo/", views.documento_form, name="documento_novo"),
+    path("documentos/<int:pk>/editar/", views.documento_form, name="documento_editar"),
+    path("documentos/<int:pk>/enviar/", views.documento_enviar, name="documento_enviar"),
+    path("documentos/<int:pk>/whatsapp/", views.documento_whatsapp_manual, name="documento_whatsapp_manual"),
+    path("documentos/<int:pk>/pdf/", views.documento_pdf, name="documento_pdf"),
+    path("documentos/<int:pk>/excluir/", views.documento_excluir, name="documento_excluir"),
+    path("alertas/", views.alertas, name="alertas"),
+]

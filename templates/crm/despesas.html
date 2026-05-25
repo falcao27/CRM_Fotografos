@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block page_title %}Despesas{% endblock %}
+{% block page_subtitle %}Custos separados por categoria, vencimento, status e forma de pagamento.{% endblock %}
+
+{% block content %}
+<section class="toolbar">
+  <form class="search" method="get">
+    <select name="status">
+      <option value="">Todos os status</option>
+      <option value="pendente" {% if status == "pendente" %}selected{% endif %}>Pendente</option>
+      <option value="pago" {% if status == "pago" %}selected{% endif %}>Pago</option>
+      <option value="atrasado" {% if status == "atrasado" %}selected{% endif %}>Atrasado</option>
+    </select>
+    <button class="button ghost" type="submit"><i data-lucide="filter"></i>Filtrar</button>
+  </form>
+  <a class="button" href="{% url 'despesa_nova' %}"><i data-lucide="plus"></i>Nova despesa</a>
+</section>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Descricao</th><th>Categoria</th><th>Data</th><th>Vencimento</th><th>Pagamento</th><th>Status</th><th>Valor</th><th>Acoes</th></tr></thead>
+      <tbody>
+        {% for despesa in despesas %}
+          <tr>
+            <td><strong>{{ despesa.descricao }}</strong><br><small>{{ despesa.observacoes }}</small></td>
+            <td>{{ despesa.categoria|default:"Sem categoria" }}</td>
+            <td>{{ despesa.data|date:"d/m/Y" }}</td>
+            <td>{{ despesa.vencimento|date:"d/m/Y" }}</td>
+            <td>{{ despesa.get_forma_pagamento_display }}</td>
+            <td><span class="badge {{ despesa.status }}">{{ despesa.get_status_display }}</span></td>
+            <td>R$ {{ despesa.valor|floatformat:2 }}</td>
+            <td class="actions">
+              <a class="icon-link" href="{% url 'despesa_editar' despesa.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
+              <a class="icon-link danger" href="{% url 'despesa_excluir' despesa.pk %}" title="Excluir"><i data-lucide="trash-2"></i></a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8">Nenhuma despesa cadastrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+

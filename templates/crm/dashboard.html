@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block page_title %}Dashboard{% endblock %}
+{% block page_subtitle %}Tudo num so lugar, como seu HD de fotos, mas organizado.{% endblock %}
+
+{% block content %}
+<section class="month-line">
+  <i data-lucide="calendar"></i>
+  <strong>{{ inicio_mes|date:"F" }}</strong>
+  <span>({{ inicio_mes|date:"d/m" }} - {{ fim_mes|date:"d/m" }})</span>
+</section>
+
+<section class="finance-summary">
+  <article class="money-card income">
+    <div><span>Receitas</span><small>Recebidos</small><strong>R$ {{ totais.receitas_recebidas|floatformat:2 }}</strong></div>
+    <div><i data-lucide="dollar-sign"></i><small>A receber</small><b>R$ {{ totais.receitas_a_receber|floatformat:2 }}</b></div>
+  </article>
+  <article class="money-card expense">
+    <div><span>Despesas</span><small>Pagos</small><strong>R$ {{ totais.despesas_pagas|floatformat:2 }}</strong></div>
+    <div><i data-lucide="dollar-sign"></i><small>A pagar</small><b>R$ {{ totais.despesas_a_pagar|floatformat:2 }}</b></div>
+  </article>
+  <article class="money-card balance">
+    <div><span>Balanco</span><small>Saldo atual</small><strong>R$ {{ totais.saldo_atual|floatformat:2 }}</strong></div>
+    <div><i data-lucide="scale"></i><small>Saldo previsto</small><b>R$ {{ totais.saldo_previsto|floatformat:2 }}</b></div>
+  </article>
+</section>
+
+<section class="metric-grid">
+  <article class="metric"><i data-lucide="file-plus-2"></i><span>Contratos Criados no Mes</span><strong>{{ totais.contratos_mes }}</strong></article>
+  <article class="metric"><i data-lucide="briefcase-business"></i><span>Trabalhos no Mes</span><strong>{{ totais.trabalhos_mes }}</strong></article>
+  <article class="metric"><i data-lucide="clipboard-list"></i><span>Tarefas Pendentes</span><strong>{{ totais.tarefas_pendentes }}</strong></article>
+  <article class="metric danger-metric"><i data-lucide="triangle-alert"></i><span>Tarefas Atrasadas</span><strong>{{ totais.tarefas_atrasadas }}</strong></article>
+  <article class="metric"><i data-lucide="target"></i><span>Oportunidades</span><strong>{{ totais.oportunidades }}</strong></article>
+  <article class="metric wide"><i data-lucide="file-signature"></i><span>Docs Pendentes de Assinatura</span><strong>{{ totais.docs_pendentes }}</strong></article>
+  <article class="metric wide"><i data-lucide="inbox"></i><span>Formularios Recebidos (30 dias)</span><strong>{{ totais.formularios_recebidos }}</strong></article>
+</section>
+
+<section class="dashboard-grid">
+  <article class="panel chart-panel">
+    <div class="panel-head">
+      <h2>Receitas vs Despesas</h2>
+      <div class="legend"><span class="dot green"></span>Recebido <span class="dot red"></span>Pago</div>
+    </div>
+    <div class="bar-chart">
+      {% for mes in meses %}
+        <div class="bar-month">
+          <div class="bars">
+            <span class="bar green" style="height: {{ mes.recebido_altura }}px"></span>
+            <span class="bar red" style="height: {{ mes.pago_altura }}px"></span>
+          </div>
+          <small>{{ mes.nome }}</small>
+        </div>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head"><h2>Formas de pagamento</h2></div>
+    <div class="payment-list">
+      <div><span class="dot green"></span>Pix <b>prioritario</b></div>
+      <div><span class="dot blue"></span>Cartao <b>parcelado</b></div>
+      <div><span class="dot amber"></span>Boleto <b>cobranca</b></div>
+      <div><span class="dot purple"></span>Dinheiro <b>a vista</b></div>
+    </div>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head">
+      <h2>Agenda da Semana</h2>
+      <a class="button ghost" href="{% url 'agenda' %}">Abrir agenda</a>
+    </div>
+    <div class="timeline-list">
+      {% for tarefa in tarefas_semana %}
+        <div class="timeline-item {{ tarefa.tipo }}">
+          <strong>{{ tarefa.titulo }}</strong>
+          <small>{{ tarefa.data|date:"d/m" }}{% if tarefa.hora %} - {{ tarefa.hora|time:"H:i" }}{% endif %}{% if tarefa.cliente %} - {{ tarefa.cliente.nome }}{% endif %}</small>
+        </div>
+      {% empty %}
+        <p class="empty">Nenhum compromisso nos proximos dias.</p>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head"><h2>Tarefas do Mes</h2></div>
+    <div class="progress-wrap">
+      <div class="progress-ring" style="--progress: {{ progresso_tarefas }}%"><strong>{{ progresso_tarefas }}%</strong></div>
+      <p><b>{{ totais.tarefas_pendentes }}</b> pendentes · <b>{{ totais.tarefas_atrasadas }}</b> atrasadas</p>
+    </div>
+  </article>
+</section>
+
+<section class="split">
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Cobrancas para hoje</h2>
+      <a class="button ghost" href="{% url 'alertas' %}">Ver alertas</a>
+    </div>
+    <div class="list">
+      {% for parcela in parcelas_alerta %}
+        <div class="list-row">
+          <div>
+            <strong>{{ parcela.venda.cliente.nome }}</strong>
+            <span>{{ parcela.venda.titulo }} - parcela {{ parcela.numero }} vence em {{ parcela.vencimento|date:"d/m/Y" }}</span>
+          </div>
+          <b>R$ {{ parcela.valor|floatformat:2 }}</b>
+        </div>
+      {% empty %}
+        <p class="empty">Sem cobrancas pendentes no momento.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Oportunidades 10 meses antes</h2>
+      <a class="button ghost" href="{% url 'clientes' %}">Clientes</a>
+    </div>
+    <div class="list">
+      {% for cliente in recompra_alerta %}
+        <div class="list-row">
+          <div>
+            <strong>{{ cliente.nome }}</strong>
+            <span>Contato a partir de {{ cliente.data_alerta_recompra|date:"d/m/Y" }} para vender antes de {{ cliente.proxima_oportunidade|date:"d/m/Y" }}</span>
+          </div>
+          <b>{{ cliente.telefone }}</b>
+        </div>
+      {% empty %}
+        <p class="empty">Nenhum alerta comercial ativo.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

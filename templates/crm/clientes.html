@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block page_title %}Clientes e contatos{% endblock %}
+{% block page_subtitle %}Cadastre contatos, eventos e a proxima oportunidade de venda.{% endblock %}
+
+{% block content %}
+<section class="toolbar">
+  <form class="search" method="get">
+    <input type="search" name="q" value="{{ busca }}" placeholder="Buscar por nome, telefone ou email">
+    <button class="button ghost" type="submit"><i data-lucide="search"></i>Buscar</button>
+  </form>
+  <a class="button" href="{% url 'cliente_novo' %}"><i data-lucide="plus"></i>Novo cliente</a>
+</section>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Nome</th><th>Contato</th><th>Evento</th><th>Alerta 10 meses antes</th><th>Vendas</th><th>Acoes</th></tr></thead>
+      <tbody>
+        {% for cliente in clientes %}
+          <tr>
+            <td><strong>{{ cliente.nome }}</strong><br><small>{{ cliente.origem }}</small></td>
+            <td>{{ cliente.telefone }}<br><small>{{ cliente.email }}</small></td>
+            <td>{{ cliente.tipo_evento }}<br><small>{{ cliente.data_evento|date:"d/m/Y" }}</small></td>
+            <td>
+              {% if cliente.proxima_oportunidade %}
+                {{ cliente.data_alerta_recompra|date:"d/m/Y" }}<br><small>Meta: {{ cliente.proxima_oportunidade|date:"d/m/Y" }}</small>
+              {% else %}
+                <small>Sem data definida</small>
+              {% endif %}
+            </td>
+            <td>{{ cliente.total_vendas }}</td>
+            <td class="actions">
+              <a class="icon-link" href="{% url 'cliente_editar' cliente.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
+              <a class="icon-link danger" href="{% url 'cliente_excluir' cliente.pk %}" title="Excluir"><i data-lucide="trash-2"></i></a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6">Nenhum cliente cadastrado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+

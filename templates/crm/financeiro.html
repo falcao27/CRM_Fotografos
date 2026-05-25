@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block page_title %}Painel financeiro{% endblock %}
+{% block page_subtitle %}Controle pagamentos, parcelas, vencimentos e cobrancas.{% endblock %}
+
+{% block content %}
+<section class="toolbar">
+  <form class="search" method="get">
+    <select name="status">
+      <option value="">Todos os status</option>
+      <option value="pendente" {% if status == "pendente" %}selected{% endif %}>Pendente</option>
+      <option value="vencido" {% if status == "vencido" %}selected{% endif %}>Vencido</option>
+      <option value="pago" {% if status == "pago" %}selected{% endif %}>Pago</option>
+      <option value="atrasado" {% if status == "atrasado" %}selected{% endif %}>Atrasado</option>
+      <option value="cancelado" {% if status == "cancelado" %}selected{% endif %}>Cancelado</option>
+    </select>
+    <button class="button ghost" type="submit"><i data-lucide="filter"></i>Filtrar</button>
+  </form>
+  <a class="button" href="{% url 'venda_nova' %}"><i data-lucide="plus"></i>Nova venda</a>
+</section>
+
+<section class="client-card-grid">
+  {% for cliente in clientes %}
+    <button
+      class="client-card"
+      type="button"
+      data-panel-url="{% url 'financeiro_cliente_painel' cliente.pk %}?status={{ status }}"
+      aria-label="Abrir financeiro de {{ cliente.nome }}"
+    >
+      <span>{{ cliente.nome }}</span>
+      {% if cliente.parcelas_vencidas %}
+        <small class="card-alert"><i data-lucide="triangle-alert"></i>{{ cliente.parcelas_vencidas }} pagamento(s) vencido(s)</small>
+      {% endif %}
+    </button>
+  {% empty %}
+    <section class="panel"><p class="empty">Nenhuma venda cadastrada.</p></section>
+  {% endfor %}
+</section>
+
+<div class="drawer-backdrop" id="financeDrawerBackdrop" hidden></div>
+<aside class="finance-drawer" id="financeDrawer" aria-hidden="true" aria-label="Detalhes financeiros do cliente">
+  <div class="drawer-shell">
+    <div class="drawer-loading">Carregando...</div>
+  </div>
+</aside>
+
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    const drawer = document.getElementById("financeDrawer");
+    const backdrop = document.getElementById("financeDrawerBackdrop");
+    const shell = drawer.querySelector(".drawer-shell");
+
+    function refreshIcons() {
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    function closeDrawer() {
+      drawer.classList.remove("open");
+      drawer.setAttribute("aria-hidden", "true");
+      backdrop.hidden = true;
+    }
+
+    document.querySelectorAll(".client-card").forEach(function (card) {
+      card.addEventListener("click", function () {
+        drawer.classList.add("open");
+        drawer.setAttribute("aria-hidden", "false");
+        backdrop.hidden = false;
+        shell.innerHTML = '<div class="drawer-loading">Carregando...</div>';
+
+        fetch(card.dataset.panelUrl, { headers: { "X-Requested-With": "XMLHttpRequest" } })
+          .then(function (response) { return response.text(); })
+          .then(function (html) {
+            shell.innerHTML = html;
+            refreshIcons();
+          })
+          .catch(function () {
+            shell.innerHTML = '<div class="drawer-loading">Nao foi possivel carregar este cliente.</div>';
+          });
+      });
+    });
+
+    backdrop.addEventListener("click", closeDrawer);
+    drawer.addEventListener("click", function (event) {
+      if (event.target.closest("[data-close-drawer]")) closeDrawer();
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") closeDrawer();
+    });
+  });
+</script>
+{% endblock %}

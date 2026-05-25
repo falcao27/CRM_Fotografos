@@ -1,0 +1,64 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRM Fotografos</title>
+  <link rel="stylesheet" href="{% static 'crm/styles.css' %}">
+  <script src="https://unpkg.com/lucide@latest" defer></script>
+</head>
+<body>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="brand-mark">CF</span>
+      <div>
+        <strong>CRM Fotografos</strong>
+        <small>Vendas e relacionamento</small>
+      </div>
+    </div>
+    <nav>
+      <a href="{% url 'dashboard' %}"><i data-lucide="layout-dashboard"></i>Painel</a>
+      <a href="{% url 'financeiro' %}"><i data-lucide="wallet-cards"></i>Financeiro</a>
+      <a href="{% url 'despesas' %}"><i data-lucide="receipt-text"></i>Despesas</a>
+      <a href="{% url 'pipeline' %}"><i data-lucide="kanban-square"></i>Pipeline</a>
+      <a href="{% url 'agenda' %}"><i data-lucide="calendar-days"></i>Agenda</a>
+      <a href="{% url 'clientes' %}"><i data-lucide="contact-round"></i>Clientes</a>
+      <a href="{% url 'documentos' %}"><i data-lucide="file-check-2"></i>Documentos</a>
+      <a href="{% url 'alertas' %}"><i data-lucide="bell-ring"></i>Alertas</a>
+      <a href="/admin/"><i data-lucide="database"></i>Banco/Admin</a>
+    </nav>
+  </aside>
+
+  <main class="shell">
+    <header class="topbar">
+      <button class="icon-button" type="button" id="menuButton" aria-label="Abrir menu">
+        <i data-lucide="menu"></i>
+      </button>
+      <div>
+        <h1>{% block page_title %}CRM Fotografos{% endblock %}</h1>
+        <p>{% block page_subtitle %}Controle financeiro e comercial para fotografia.{% endblock %}</p>
+      </div>
+    </header>
+
+    {% if messages %}
+      <div class="messages">
+        {% for message in messages %}
+          <div class="message">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+    window.addEventListener("DOMContentLoaded", function () {
+      if (window.lucide) window.lucide.createIcons();
+      document.getElementById("menuButton").addEventListener("click", function () {
+        document.getElementById("sidebar").classList.toggle("open");
+      });
+    });
+  </script>
+</body>
+</html>

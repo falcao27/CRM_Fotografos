@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block page_title %}Confirmar exclusao{% endblock %}
+{% block page_subtitle %}Esta acao remove o registro do banco de dados.{% endblock %}
+
+{% block content %}
+<section class="form-panel narrow">
+  <h2>Excluir {{ objeto }}?</h2>
+  <form method="post">
+    {% csrf_token %}
+    <div class="row-actions">
+      <button class="button danger" type="submit"><i data-lucide="trash-2"></i>Excluir</button>
+      <a class="button ghost" href="{% url voltar %}">Cancelar</a>
+    </div>
+  </form>
+</section>
+{% endblock %}
+

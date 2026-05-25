@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block page_title %}Documentos{% endblock %}
+{% block page_subtitle %}Contratos, autorizacoes e documentos pendentes de assinatura.{% endblock %}
+
+{% block content %}
+<section class="toolbar">
+  <div></div>
+  <a class="button" href="{% url 'documento_novo' %}"><i data-lucide="plus"></i>Novo documento</a>
+</section>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Documento</th><th>Cliente</th><th>Envio virtual</th><th>Limite</th><th>Status</th><th>Acoes</th></tr></thead>
+      <tbody>
+        {% for documento in documentos %}
+          <tr>
+            <td><strong>{{ documento.titulo }}</strong><br><small>{{ documento.observacoes }}</small></td>
+            <td>
+              {% if documento.cliente %}{{ documento.cliente.nome }}{% else %}Sem cliente{% endif %}
+              <br><small>{{ documento.contato_whatsapp }}{% if documento.contato_email %} - {{ documento.contato_email }}{% endif %}</small>
+            </td>
+            <td>{{ documento.get_forma_envio_display }}<br><small>Enviado: {{ documento.enviado_em|date:"d/m/Y"|default:"Nao enviado" }}</small></td>
+            <td>{{ documento.data_limite|date:"d/m/Y" }}</td>
+            <td>
+              <span class="badge {{ documento.status }}">{{ documento.get_status_display }}</span>
+              {% if documento.ultimo_envio_em %}
+                <br><small>{% if documento.ultimo_envio_sucesso %}Ultimo envio confirmado{% else %}Falha no ultimo envio{% endif %}: {{ documento.ultimo_envio_em|date:"d/m/Y H:i" }}</small>
+              {% endif %}
+            </td>
+            <td class="actions">
+              <form class="inline-form" method="post" action="{% url 'documento_enviar' documento.pk %}">
+                {% csrf_token %}
+                <button class="icon-link" type="submit" title="Enviar documento real"><i data-lucide="send"></i></button>
+              </form>
+              <a class="icon-link" href="{% url 'documento_pdf' documento.pk %}" target="_blank" rel="noopener" title="Abrir PDF editavel"><i data-lucide="file-text"></i></a>
+              <a class="icon-link" href="{% url 'documento_pdf' documento.pk %}?download=1" title="Baixar PDF editavel"><i data-lucide="download"></i></a>
+              <a class="icon-link" href="{% url 'documento_whatsapp_manual' documento.pk %}" target="_blank" rel="noopener" title="Abrir WhatsApp com mensagem pronta"><i data-lucide="message-circle"></i></a>
+              <a class="icon-link" href="{% url 'documento_editar' documento.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
+              <a class="icon-link danger" href="{% url 'documento_excluir' documento.pk %}" title="Excluir"><i data-lucide="trash-2"></i></a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6">Nenhum documento cadastrado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

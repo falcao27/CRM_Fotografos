@@ -1,0 +1,61 @@
+<div class="drawer-head">
+  <div>
+    <span>Cliente</span>
+    <h2>{{ cliente.nome }}</h2>
+    <p>{{ cliente.telefone }}{% if cliente.email %} - {{ cliente.email }}{% endif %}</p>
+  </div>
+  <button class="icon-button drawer-close" type="button" data-close-drawer aria-label="Fechar painel">
+    <i data-lucide="x"></i>
+  </button>
+</div>
+
+<div class="drawer-summary">
+  <div>
+    <span>Total em vendas</span>
+    <strong>R$ {{ totais|floatformat:2 }}</strong>
+  </div>
+  <a class="button ghost" href="{% url 'cliente_editar' cliente.pk %}"><i data-lucide="contact-round"></i>Editar cliente</a>
+</div>
+
+<div class="drawer-sales">
+  {% for venda in vendas %}
+    <article class="sale drawer-sale">
+      <div class="sale-head">
+        <div>
+          <h2>{{ venda.titulo }}</h2>
+          <p>{{ venda.get_condicao_pagamento_display }} via {{ venda.get_forma_pagamento_display }} - {{ venda.data_venda|date:"d/m/Y" }}</p>
+        </div>
+        <div class="sale-total">
+          <span class="badge {{ venda.status }}">{{ venda.get_status_display }}</span>
+          <strong>R$ {{ venda.valor_total|floatformat:2 }}</strong>
+        </div>
+      </div>
+
+      <div class="installments compact">
+        {% for parcela in venda.parcelas.all %}
+          <div class="installment {% if parcela.deve_alertar %}attention{% endif %}">
+            <span>#{{ parcela.numero }}</span>
+            <strong>R$ {{ parcela.valor|floatformat:2 }}</strong>
+            <small>Vence {{ parcela.vencimento|date:"d/m/Y" }}</small>
+            <small>Lembrete {{ parcela.lembrete_em|date:"d/m/Y" }}</small>
+            <span class="badge {{ parcela.status_financeiro }}">{{ parcela.status_financeiro_label }}</span>
+            {% if parcela.status_financeiro == "vencido" %}
+              <small class="overdue-text">Pagamento vencido. Cobrar cliente.</small>
+            {% endif %}
+            <a class="icon-link" href="{% url 'parcela_editar' parcela.pk %}" title="Editar parcela"><i data-lucide="pencil"></i></a>
+          </div>
+        {% empty %}
+          <p class="empty">Sem parcelas cadastradas.</p>
+        {% endfor %}
+      </div>
+
+      <div class="row-actions">
+        <a class="button ghost" href="{% url 'parcela_nova' venda.pk %}"><i data-lucide="calendar-plus"></i>Adicionar parcela</a>
+        <a class="button ghost" href="{% url 'venda_editar' venda.pk %}"><i data-lucide="pencil"></i>Editar venda</a>
+        <a class="button danger" href="{% url 'venda_excluir' venda.pk %}"><i data-lucide="trash-2"></i>Excluir</a>
+      </div>
+    </article>
+  {% empty %}
+    <p class="empty">Este cliente nao tem vendas neste filtro.</p>
+  {% endfor %}
+</div>
