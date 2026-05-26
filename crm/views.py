@@ -1,6 +1,12 @@
+import csv
+import io
+import unicodedata
+import zipfile
 from calendar import monthrange
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from html import escape
+from xml.etree import ElementTree as ET
 
 from django.contrib import messages
 from django.http import HttpResponse
@@ -12,6 +18,18 @@ from .forms import ClienteForm, DespesaForm, DocumentoForm, OportunidadeForm, Pa
 from .models import Cliente, Despesa, Documento, Oportunidade, Parcela, Tarefa, Venda
 from .pdf import gerar_pdf_documento, nome_pdf_documento
 from .services import EnvioDocumentoError, enviar_documento, link_whatsapp_manual
+
+
+CLIENTE_PLANILHA_CAMPOS = [
+    ("nome", "Nome"),
+    ("telefone", "Telefone"),
+    ("email", "Email"),
+    ("origem", "Origem"),
+    ("tipo_evento", "Tipo de evento"),
+    ("data_evento", "Data do evento"),
+    ("proxima_oportunidade", "Proxima oportunidade"),
+    ("observacoes", "Observacoes"),
+]
 
 
 def add_months(data, meses):
@@ -41,6 +59,153 @@ def gerar_parcelas(venda, primeira_parcela):
             data_pagamento=venda.data_venda if venda.status == "pago" else None,
         )
         restante -= valor
+
+
+def formatar_data_planilha(valor):
+    return valor.strftime("%d/%m/%Y") if valor else ""
+
+
+def ler_data_planilha(valor):
+    valor = (valor or "").strip()
+    if not valor:
+        return None
+    try:
+        serial_excel = float(valor)
+        if serial_excel > 59:
+            return date(1899, 12, 30) + timedelta(days=int(serial_excel))
+    except ValueError:
+        pass
+    for formato in ("%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return date.fromisoformat(valor) if formato == "%Y-%m-%d" else datetime.strptime(valor, formato).date()
+        except ValueError:
+            continue
+    return None
+
+
+def coluna_excel(indice):
+    nome = ""
+    while indice:
+        indice, resto = divmod(indice - 1, 26)
+        nome = chr(65 + resto) + nome
+    return nome
+
+
+def indice_coluna_excel(referencia):
+    letras = "".join(caractere for caractere in referencia if caractere.isalpha())
+    indice = 0
+    for caractere in letras:
+        indice = indice * 26 + (ord(caractere.upper()) - 64)
+    return max(indice - 1, 0)
+
+
+def montar_xlsx_clientes(clientes):
+    linhas = [[rotulo for _, rotulo in CLIENTE_PLANILHA_CAMPOS]]
+    for cliente in clientes:
+        linhas.append(
+            [
+                cliente.nome,
+                cliente.telefone,
+                cliente.email,
+                cliente.origem,
+                cliente.tipo_evento,
+                formatar_data_planilha(cliente.data_evento),
+                formatar_data_planilha(cliente.proxima_oportunidade),
+                cliente.observacoes,
+            ]
+        )
+
+    linhas_xml = []
+    for numero_linha, linha in enumerate(linhas, start=1):
+        celulas = []
+        for numero_coluna, valor in enumerate(linha, start=1):
+            referencia = f"{coluna_excel(numero_coluna)}{numero_linha}"
+            celulas.append(f'<c r="{referencia}" t="inlineStr"><is><t>{escape(str(valor or ""))}</t></is></c>')
+        linhas_xml.append(f'<row r="{numero_linha}">{"".join(celulas)}</row>')
+
+    sheet_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f'<sheetData>{"".join(linhas_xml)}</sheetData>'
+        "</worksheet>"
+    )
+    workbook_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        '<sheets><sheet name="Clientes" sheetId="1" r:id="rId1"/></sheets></workbook>'
+    )
+    workbook_rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+        'Target="worksheets/sheet1.xml"/></Relationships>'
+    )
+    rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
+        'Target="xl/workbook.xml"/></Relationships>'
+    )
+    content_types = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/xl/workbook.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        '<Override PartName="/xl/worksheets/sheet1.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        "</Types>"
+    )
+
+    arquivo = io.BytesIO()
+    with zipfile.ZipFile(arquivo, "w", zipfile.ZIP_DEFLATED) as planilha:
+        planilha.writestr("[Content_Types].xml", content_types)
+        planilha.writestr("_rels/.rels", rels)
+        planilha.writestr("xl/workbook.xml", workbook_xml)
+        planilha.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
+        planilha.writestr("xl/worksheets/sheet1.xml", sheet_xml)
+    return arquivo.getvalue()
+
+
+def ler_linhas_xlsx(arquivo):
+    ns = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    with zipfile.ZipFile(arquivo) as planilha:
+        compartilhadas = []
+        if "xl/sharedStrings.xml" in planilha.namelist():
+            shared_root = ET.fromstring(planilha.read("xl/sharedStrings.xml"))
+            for item in shared_root.findall("x:si", ns):
+                compartilhadas.append("".join(texto.text or "" for texto in item.findall(".//x:t", ns)))
+        sheet_root = ET.fromstring(planilha.read("xl/worksheets/sheet1.xml"))
+        linhas = []
+        for row in sheet_root.findall(".//x:sheetData/x:row", ns):
+            valores = []
+            for cell in row.findall("x:c", ns):
+                indice = indice_coluna_excel(cell.attrib.get("r", ""))
+                while len(valores) < indice:
+                    valores.append("")
+                tipo = cell.attrib.get("t")
+                valor = ""
+                if tipo == "inlineStr":
+                    valor = "".join(texto.text or "" for texto in cell.findall(".//x:t", ns))
+                else:
+                    node = cell.find("x:v", ns)
+                    if node is not None and node.text is not None:
+                        valor = compartilhadas[int(node.text)] if tipo == "s" else node.text
+                valores.append(valor)
+            linhas.append(valores)
+    return linhas
+
+
+def ler_linhas_csv(arquivo):
+    texto = arquivo.read().decode("utf-8-sig")
+    return list(csv.reader(io.StringIO(texto)))
+
+
+def normalizar_cabecalho(valor):
+    texto = unicodedata.normalize("NFKD", (valor or "").strip().lower())
+    return "".join(caractere for caractere in texto if not unicodedata.combining(caractere))
 
 
 def dashboard(request):
@@ -253,10 +418,22 @@ def alertas(request):
         Q(vencimento__lt=hoje) | Q(lembrete_em__lte=hoje)
     )
     clientes_recompra = [cliente for cliente in Cliente.objects.all() if cliente.precisa_alerta_recompra]
+    clientes_evento_hoje = Cliente.objects.filter(data_evento=hoje)
+    clientes_edicao = Cliente.objects.filter(data_evento=hoje - timedelta(days=1))
+    clientes_copia_cartao = Cliente.objects.none()
+    if hoje.weekday() == 0:
+        clientes_copia_cartao = Cliente.objects.filter(data_evento__range=(hoje - timedelta(days=7), hoje - timedelta(days=1)))
     return render(
         request,
         "crm/alertas.html",
-        {"parcelas": parcelas, "clientes_recompra": clientes_recompra, "hoje": hoje},
+        {
+            "parcelas": parcelas,
+            "clientes_recompra": clientes_recompra,
+            "clientes_evento_hoje": clientes_evento_hoje,
+            "clientes_edicao": clientes_edicao,
+            "clientes_copia_cartao": clientes_copia_cartao,
+            "hoje": hoje,
+        },
     )
 
 
@@ -288,10 +465,50 @@ def despesa_excluir(request, pk):
 
 
 def pipeline(request):
+    busca = request.GET.get("q", "").strip()
+    hoje = timezone.localdate()
+    inicio_relatorio = hoje - timedelta(days=30)
+    etapas_visiveis = {"novo", "orcamento", "negociacao"}
+    oportunidades = Oportunidade.objects.select_related("cliente")
+    if busca:
+        oportunidades = oportunidades.filter(Q(nome_lead__icontains=busca) | Q(cliente__nome__icontains=busca))
+
+    oportunidades_30_dias = oportunidades.filter(criado_em__date__gte=inicio_relatorio)
+    resumo_30_dias = {
+        "total": oportunidades_30_dias.count(),
+        "novos": oportunidades_30_dias.filter(etapa="novo").count(),
+        "em_andamento": oportunidades_30_dias.filter(etapa__in=["orcamento", "negociacao"]).count(),
+        "fechados": oportunidades_30_dias.filter(etapa="fechado").count(),
+        "perdidos": oportunidades_30_dias.filter(etapa="perdido").count(),
+        "valor_aberto": oportunidades_30_dias.filter(etapa__in=etapas_visiveis).aggregate(total=Sum("valor_estimado"))[
+            "total"
+        ]
+        or 0,
+    }
+
     etapas = []
     for codigo, nome in Oportunidade.ETAPA_CHOICES:
-        etapas.append({"codigo": codigo, "nome": nome, "items": Oportunidade.objects.filter(etapa=codigo)})
-    return render(request, "crm/pipeline.html", {"etapas": etapas})
+        etapa_qs = oportunidades.filter(etapa=codigo)
+        etapas.append(
+            {
+                "codigo": codigo,
+                "nome": nome,
+                "items": etapa_qs if codigo in etapas_visiveis else [],
+                "total": etapa_qs.count(),
+                "mostrar_cards": codigo in etapas_visiveis,
+            }
+        )
+    return render(
+        request,
+        "crm/pipeline.html",
+        {
+            "etapas": etapas,
+            "busca": busca,
+            "resumo_30_dias": resumo_30_dias,
+            "inicio_relatorio": inicio_relatorio,
+            "fim_relatorio": hoje,
+        },
+    )
 
 
 def oportunidade_form(request, pk=None):
@@ -381,6 +598,93 @@ def tarefa_excluir(request, pk):
 def documentos(request):
     docs = Documento.objects.select_related("cliente")
     return render(request, "crm/documentos.html", {"documentos": docs})
+
+
+def clientes_exportar_planilha(request):
+    conteudo = montar_xlsx_clientes(Cliente.objects.all())
+    response = HttpResponse(
+        conteudo,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="clientes.xlsx"'
+    return response
+
+
+def clientes_importar_planilha(request):
+    if request.method != "POST":
+        return redirect("documentos")
+
+    arquivo = request.FILES.get("planilha")
+    if not arquivo:
+        messages.error(request, "Selecione uma planilha para importar.")
+        return redirect("documentos")
+
+    try:
+        if arquivo.name.lower().endswith(".csv"):
+            linhas = ler_linhas_csv(arquivo)
+        elif arquivo.name.lower().endswith(".xlsx"):
+            linhas = ler_linhas_xlsx(arquivo)
+        else:
+            messages.error(request, "Envie uma planilha .xlsx ou .csv.")
+            return redirect("documentos")
+    except (OSError, UnicodeDecodeError, zipfile.BadZipFile, ET.ParseError, KeyError, IndexError) as exc:
+        messages.error(request, f"Nao foi possivel ler a planilha: {exc}")
+        return redirect("documentos")
+
+    if not linhas:
+        messages.warning(request, "A planilha esta vazia.")
+        return redirect("documentos")
+
+    cabecalho = [normalizar_cabecalho(coluna) for coluna in linhas[0]]
+    campos_por_rotulo = {normalizar_cabecalho(rotulo): campo for campo, rotulo in CLIENTE_PLANILHA_CAMPOS}
+    indices = {campos_por_rotulo[nome]: indice for indice, nome in enumerate(cabecalho) if nome in campos_por_rotulo}
+    if "nome" not in indices:
+        messages.error(request, "A planilha precisa ter uma coluna Nome.")
+        return redirect("documentos")
+
+    criados = 0
+    atualizados = 0
+    ignorados = 0
+    for linha in linhas[1:]:
+        dados = {}
+        for campo, indice in indices.items():
+            dados[campo] = linha[indice].strip() if indice < len(linha) and linha[indice] is not None else ""
+        nome = dados.get("nome", "").strip()
+        if not nome:
+            ignorados += 1
+            continue
+
+        cliente = None
+        email = dados.get("email", "").strip()
+        if email:
+            cliente = Cliente.objects.filter(email__iexact=email).first()
+        if not cliente:
+            cliente = Cliente.objects.filter(nome__iexact=nome).first()
+
+        valores = {
+            "nome": nome,
+            "telefone": dados.get("telefone", ""),
+            "email": email,
+            "origem": dados.get("origem", ""),
+            "tipo_evento": dados.get("tipo_evento", ""),
+            "data_evento": ler_data_planilha(dados.get("data_evento", "")),
+            "proxima_oportunidade": ler_data_planilha(dados.get("proxima_oportunidade", "")),
+            "observacoes": dados.get("observacoes", ""),
+        }
+        if cliente:
+            for campo, valor in valores.items():
+                setattr(cliente, campo, valor)
+            cliente.save()
+            atualizados += 1
+        else:
+            Cliente.objects.create(**valores)
+            criados += 1
+
+    messages.success(
+        request,
+        f"Planilha importada: {criados} clientes criados, {atualizados} atualizados e {ignorados} linhas ignoradas.",
+    )
+    return redirect("documentos")
 
 
 def documento_form(request, pk=None):

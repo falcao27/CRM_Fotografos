@@ -5,36 +5,74 @@
 
 {% block content %}
 <section class="toolbar">
-  <div></div>
+  <form class="search" method="get">
+    <input type="search" name="q" value="{{ busca }}" placeholder="Buscar por nome do cliente">
+    <button class="button ghost" type="submit"><i data-lucide="search"></i>Buscar</button>
+  </form>
   <a class="button" href="{% url 'oportunidade_nova' %}"><i data-lucide="plus"></i>Nova oportunidade</a>
+</section>
+
+<section class="pipeline-report">
+  <article>
+    <span>Relatorio de 30 dias</span>
+    <strong>{{ resumo_30_dias.total }}</strong>
+    <small>{{ inicio_relatorio|date:"d/m/Y" }} ate {{ fim_relatorio|date:"d/m/Y" }}</small>
+  </article>
+  <article>
+    <span>Novos leads</span>
+    <strong>{{ resumo_30_dias.novos }}</strong>
+    <small>Entradas recentes</small>
+  </article>
+  <article>
+    <span>Orcamento e negociacao</span>
+    <strong>{{ resumo_30_dias.em_andamento }}</strong>
+    <small>Clientes em atendimento</small>
+  </article>
+  <article>
+    <span>Fechados</span>
+    <strong>{{ resumo_30_dias.fechados }}</strong>
+    <small>Ganhos no periodo</small>
+  </article>
+  <article>
+    <span>Perdidos</span>
+    <strong>{{ resumo_30_dias.perdidos }}</strong>
+    <small>Encerrados sem venda</small>
+  </article>
+  <article>
+    <span>Valor aberto</span>
+    <strong>R$ {{ resumo_30_dias.valor_aberto|floatformat:2 }}</strong>
+    <small>Leads ativos no periodo</small>
+  </article>
 </section>
 
 <section class="kanban">
   {% for etapa in etapas %}
-    <article class="kanban-col">
+    <article class="kanban-col{% if not etapa.mostrar_cards %} kanban-summary{% endif %}">
       <header>
         <h2>{{ etapa.nome }}</h2>
-        <span>{{ etapa.items|length }}</span>
+        <span>{{ etapa.total }}</span>
       </header>
-      <div class="kanban-cards">
-        {% for oportunidade in etapa.items %}
-          <div class="kanban-card">
-            <div class="avatar">{{ oportunidade.nome_lead|slice:":2"|upper }}</div>
-            <strong>{{ oportunidade.nome_lead }}</strong>
-            <small>{{ oportunidade.titulo }}{% if oportunidade.tipo_evento %} · {{ oportunidade.tipo_evento }}{% endif %}</small>
-            <b>R$ {{ oportunidade.valor_estimado|floatformat:2 }}</b>
-            <div class="kanban-actions">
-              <a href="{% url 'oportunidade_editar' oportunidade.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
-              {% if etapa.codigo != "novo" %}<a href="{% url 'oportunidade_mover' oportunidade.pk 'novo' %}" title="Novo lead"><i data-lucide="circle-dot"></i></a>{% endif %}
-              {% if etapa.codigo != "orcamento" %}<a href="{% url 'oportunidade_mover' oportunidade.pk 'orcamento' %}" title="Orcamento"><i data-lucide="file-text"></i></a>{% endif %}
-              {% if etapa.codigo != "negociacao" %}<a href="{% url 'oportunidade_mover' oportunidade.pk 'negociacao' %}" title="Negociacao"><i data-lucide="messages-square"></i></a>{% endif %}
-              {% if etapa.codigo != "fechado" %}<a href="{% url 'oportunidade_mover' oportunidade.pk 'fechado' %}" title="Fechar e abrir cadastro do cliente"><i data-lucide="check"></i></a>{% endif %}
+      {% if etapa.mostrar_cards %}
+        <div class="kanban-cards">
+          {% for oportunidade in etapa.items %}
+            <div class="kanban-card">
+              <div class="avatar">{{ oportunidade.nome_lead|slice:":2"|upper }}</div>
+              <strong>{{ oportunidade.nome_lead }}</strong>
+              <small>{{ oportunidade.titulo }}{% if oportunidade.tipo_evento %} - {{ oportunidade.tipo_evento }}{% endif %}</small>
+              <b>R$ {{ oportunidade.valor_estimado|floatformat:2 }}</b>
+              <div class="kanban-actions">
+                <a href="{% url 'oportunidade_editar' oportunidade.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
+                {% if etapa.codigo != "novo" %}<a href="{% url 'oportunidade_mover' oportunidade.pk 'novo' %}" title="Novo lead"><i data-lucide="circle-dot"></i></a>{% endif %}
+                {% if etapa.codigo != "orcamento" %}<a href="{% url 'oportunidade_mover' oportunidade.pk 'orcamento' %}" title="Orcamento"><i data-lucide="file-text"></i></a>{% endif %}
+                {% if etapa.codigo != "negociacao" %}<a href="{% url 'oportunidade_mover' oportunidade.pk 'negociacao' %}" title="Negociacao"><i data-lucide="messages-square"></i></a>{% endif %}
+                {% if etapa.codigo != "fechado" %}<a href="{% url 'oportunidade_mover' oportunidade.pk 'fechado' %}" title="Fechar e abrir cadastro do cliente"><i data-lucide="check"></i></a>{% endif %}
+              </div>
             </div>
-          </div>
-        {% empty %}
-          <p class="empty">Sem leads nesta etapa.</p>
-        {% endfor %}
-      </div>
+          {% empty %}
+            <p class="empty">Sem leads nesta etapa.</p>
+          {% endfor %}
+        </div>
+      {% endif %}
     </article>
   {% endfor %}
 </section>

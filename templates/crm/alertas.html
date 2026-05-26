@@ -1,21 +1,30 @@
 {% extends "base.html" %}
 
 {% block page_title %}Alertas{% endblock %}
-{% block page_subtitle %}Cobrancas financeiras e tentativas de nova venda.{% endblock %}
+{% block page_subtitle %}Cobrancas financeiras, eventos e proximas acoes.{% endblock %}
 
 {% block content %}
-<section class="split">
+<section class="alert-grid">
   <div class="panel">
     <div class="panel-head"><h2>Cobrar clientes</h2></div>
     <div class="list">
       {% for parcela in parcelas %}
-        <div class="list-row">
+        <div class="list-row alert-card" role="button" tabindex="0">
           <div>
             <strong>{{ parcela.venda.cliente.nome }}</strong>
             <span>{{ parcela.venda.titulo }} - parcela {{ parcela.numero }} - vence {{ parcela.vencimento|date:"d/m/Y" }}</span>
             <small>{{ parcela.venda.cliente.telefone }} {{ parcela.venda.cliente.email }}</small>
           </div>
           <b>R$ {{ parcela.valor|floatformat:2 }}</b>
+          <div class="alert-popup-content">
+            <h3>Cobrar cliente</h3>
+            <p><strong>Cliente:</strong> {{ parcela.venda.cliente.nome }}</p>
+            <p><strong>Venda:</strong> {{ parcela.venda.titulo }}</p>
+            <p><strong>Parcela:</strong> {{ parcela.numero }}</p>
+            <p><strong>Vencimento:</strong> {{ parcela.vencimento|date:"d/m/Y" }}</p>
+            <p><strong>Valor:</strong> R$ {{ parcela.valor|floatformat:2 }}</p>
+            <p><strong>Contato:</strong> {{ parcela.venda.cliente.telefone }} {{ parcela.venda.cliente.email }}</p>
+          </div>
         </div>
       {% empty %}
         <p class="empty">Nenhuma cobranca para hoje.</p>
@@ -24,16 +33,102 @@
   </div>
 
   <div class="panel">
+    <div class="panel-head"><h2>Dias do evento</h2></div>
+    <div class="list">
+      {% for cliente in clientes_evento_hoje %}
+        <div class="list-row alert-card" role="button" tabindex="0">
+          <div>
+            <strong>{{ cliente.nome }}</strong>
+            <span>{{ cliente.tipo_evento|default:"Evento" }} acontece hoje</span>
+            <small>{{ cliente.data_evento|date:"d/m/Y" }} - {{ cliente.telefone }}</small>
+          </div>
+          <a class="icon-link alert-card-action" href="{% url 'cliente_editar' cliente.pk %}" title="Editar cliente"><i data-lucide="pencil"></i></a>
+          <div class="alert-popup-content">
+            <h3>Dia do evento</h3>
+            <p><strong>Cliente:</strong> {{ cliente.nome }}</p>
+            <p><strong>Evento:</strong> {{ cliente.tipo_evento|default:"Evento" }}</p>
+            <p><strong>Data:</strong> {{ cliente.data_evento|date:"d/m/Y" }}</p>
+            <p><strong>Telefone:</strong> {{ cliente.telefone }}</p>
+            <p><strong>Email:</strong> {{ cliente.email }}</p>
+          </div>
+        </div>
+      {% empty %}
+        <p class="empty">Nenhum evento marcado para hoje.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Editar apos o evento</h2></div>
+    <div class="list">
+      {% for cliente in clientes_edicao %}
+        <div class="list-row alert-card" role="button" tabindex="0">
+          <div>
+            <strong>{{ cliente.nome }}</strong>
+            <span>Edicao liberada 1 dia apos o evento</span>
+            <small>Evento em {{ cliente.data_evento|date:"d/m/Y" }} - {{ cliente.tipo_evento }}</small>
+          </div>
+          <a class="icon-link alert-card-action" href="{% url 'cliente_editar' cliente.pk %}" title="Editar cliente"><i data-lucide="pencil"></i></a>
+          <div class="alert-popup-content">
+            <h3>Editar apos o evento</h3>
+            <p><strong>Cliente:</strong> {{ cliente.nome }}</p>
+            <p><strong>Evento:</strong> {{ cliente.tipo_evento|default:"Evento" }}</p>
+            <p><strong>Data do evento:</strong> {{ cliente.data_evento|date:"d/m/Y" }}</p>
+            <p><strong>Acao:</strong> iniciar edicao 1 dia apos o evento.</p>
+            <p><strong>Contato:</strong> {{ cliente.telefone }} {{ cliente.email }}</p>
+          </div>
+        </div>
+      {% empty %}
+        <p class="empty">Nenhuma edicao para iniciar hoje.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Copiar cartao</h2></div>
+    <div class="list">
+      {% for cliente in clientes_copia_cartao %}
+        <div class="list-row alert-card" role="button" tabindex="0">
+          <div>
+            <strong>{{ cliente.nome }}</strong>
+            <span>Fazer copia do cartao apos a segunda-feira</span>
+            <small>Evento em {{ cliente.data_evento|date:"d/m/Y" }} - {{ cliente.tipo_evento }}</small>
+          </div>
+          <a class="icon-link alert-card-action" href="{% url 'cliente_editar' cliente.pk %}" title="Editar cliente"><i data-lucide="pencil"></i></a>
+          <div class="alert-popup-content">
+            <h3>Copiar cartao</h3>
+            <p><strong>Cliente:</strong> {{ cliente.nome }}</p>
+            <p><strong>Evento:</strong> {{ cliente.tipo_evento|default:"Evento" }}</p>
+            <p><strong>Data do evento:</strong> {{ cliente.data_evento|date:"d/m/Y" }}</p>
+            <p><strong>Acao:</strong> fazer copia do cartao apos a segunda-feira.</p>
+            <p><strong>Contato:</strong> {{ cliente.telefone }} {{ cliente.email }}</p>
+          </div>
+        </div>
+      {% empty %}
+        <p class="empty">Nenhuma copia de cartao para hoje.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
     <div class="panel-head"><h2>Fechar nova venda</h2></div>
     <div class="list">
       {% for cliente in clientes_recompra %}
-        <div class="list-row">
+        <div class="list-row alert-card" role="button" tabindex="0">
           <div>
             <strong>{{ cliente.nome }}</strong>
             <span>Alerta iniciado em {{ cliente.data_alerta_recompra|date:"d/m/Y" }}</span>
             <small>Proxima oportunidade: {{ cliente.proxima_oportunidade|date:"d/m/Y" }} - {{ cliente.telefone }}</small>
           </div>
-          <a class="icon-link" href="{% url 'cliente_editar' cliente.pk %}" title="Editar cliente"><i data-lucide="pencil"></i></a>
+          <a class="icon-link alert-card-action" href="{% url 'cliente_editar' cliente.pk %}" title="Editar cliente"><i data-lucide="pencil"></i></a>
+          <div class="alert-popup-content">
+            <h3>Fechar nova venda</h3>
+            <p><strong>Cliente:</strong> {{ cliente.nome }}</p>
+            <p><strong>Alerta iniciado em:</strong> {{ cliente.data_alerta_recompra|date:"d/m/Y" }}</p>
+            <p><strong>Proxima oportunidade:</strong> {{ cliente.proxima_oportunidade|date:"d/m/Y" }}</p>
+            <p><strong>Telefone:</strong> {{ cliente.telefone }}</p>
+            <p><strong>Email:</strong> {{ cliente.email }}</p>
+          </div>
         </div>
       {% empty %}
         <p class="empty">Nenhum cliente dentro da janela de 10 meses.</p>
@@ -41,5 +136,59 @@
     </div>
   </div>
 </section>
-{% endblock %}
 
+<div class="modal-backdrop" id="alertModal" hidden>
+  <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="alertModalTitle">
+    <button class="modal-close" type="button" aria-label="Fechar"><i data-lucide="x"></i></button>
+    <div id="alertModalBody"></div>
+  </div>
+</div>
+
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    var modal = document.getElementById("alertModal");
+    var modalBody = document.getElementById("alertModalBody");
+    var closeButton = modal.querySelector(".modal-close");
+
+    function openModal(card) {
+      var content = card.querySelector(".alert-popup-content");
+      if (!content) return;
+      modalBody.innerHTML = content.innerHTML;
+      modal.hidden = false;
+      if (window.lucide) window.lucide.createIcons();
+      closeButton.focus();
+    }
+
+    function closeModal() {
+      modal.hidden = true;
+      modalBody.innerHTML = "";
+    }
+
+    document.querySelectorAll(".alert-card").forEach(function (card) {
+      card.addEventListener("click", function () {
+        openModal(card);
+      });
+      card.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openModal(card);
+        }
+      });
+    });
+
+    document.querySelectorAll(".alert-card-action").forEach(function (action) {
+      action.addEventListener("click", function (event) {
+        event.stopPropagation();
+      });
+    });
+
+    closeButton.addEventListener("click", closeModal);
+    modal.addEventListener("click", function (event) {
+      if (event.target === modal) closeModal();
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !modal.hidden) closeModal();
+    });
+  });
+</script>
+{% endblock %}

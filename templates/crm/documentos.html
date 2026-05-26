@@ -5,7 +5,14 @@
 
 {% block content %}
 <section class="toolbar">
-  <div></div>
+  <div class="toolbar-actions">
+    <a class="button ghost" href="{% url 'clientes_exportar_planilha' %}"><i data-lucide="download"></i>Exportar clientes</a>
+    <form class="import-form" method="post" action="{% url 'clientes_importar_planilha' %}" enctype="multipart/form-data">
+      {% csrf_token %}
+      <label class="button ghost" for="planilha-clientes"><i data-lucide="upload"></i>Importar clientes</label>
+      <input id="planilha-clientes" type="file" name="planilha" accept=".xlsx,.csv" onchange="this.form.submit()">
+    </form>
+  </div>
   <a class="button" href="{% url 'documento_novo' %}"><i data-lucide="plus"></i>Novo documento</a>
 </section>
 

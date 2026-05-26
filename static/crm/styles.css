@@ -163,6 +163,78 @@ svg { width: 18px; height: 18px; flex: 0 0 auto; }
   margin-bottom: 16px;
 }
 
+.alert-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.alert-card {
+  cursor: pointer;
+  transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+
+.alert-card:hover,
+.alert-card:focus {
+  border-color: #b9ded2;
+  box-shadow: 0 8px 22px rgba(31, 43, 39, .08);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.alert-popup-content {
+  display: none;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(23, 35, 33, .42);
+}
+
+.modal-backdrop[hidden] {
+  display: none;
+}
+
+.modal-panel {
+  position: relative;
+  width: min(520px, 100%);
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 22px 70px rgba(23, 35, 33, .24);
+}
+
+.modal-panel h3 {
+  margin: 0 44px 16px 0;
+  font-size: 20px;
+}
+
+.modal-panel p {
+  margin: 9px 0;
+  line-height: 1.4;
+}
+
+.modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent-dark);
+  cursor: pointer;
+}
+
 .panel,
 .form-panel {
   padding: 18px;
@@ -292,10 +364,54 @@ th {
   margin-bottom: 16px;
 }
 
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.import-form {
+  display: inline-flex;
+}
+
+.import-form input[type="file"] {
+  display: none;
+}
+
 .search {
   display: flex;
   gap: 10px;
   flex: 1;
+}
+
+.pipeline-report {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.pipeline-report article {
+  min-height: 104px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.pipeline-report span,
+.pipeline-report small {
+  display: block;
+  color: var(--muted);
+}
+
+.pipeline-report strong {
+  display: block;
+  margin: 8px 0 4px;
+  color: var(--accent-dark);
+  font-size: 24px;
 }
 
 input,
@@ -856,6 +972,11 @@ label em {
   background: #f9faf9;
 }
 
+.kanban-col.kanban-summary {
+  min-height: 54px;
+  background: var(--surface);
+}
+
 .kanban-col header {
   display: flex;
   align-items: center;
@@ -943,8 +1064,10 @@ label em {
 
   .stats-grid,
   .split,
+  .alert-grid,
   .form-grid,
   .finance-summary,
+  .pipeline-report,
   .metric-grid,
   .dashboard-grid,
   .agenda-grid {
@@ -964,6 +1087,11 @@ label em {
 
   .search {
     flex-direction: column;
+  }
+
+  .toolbar-actions,
+  .import-form {
+    width: 100%;
   }
 
   .button {
