@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load crm_format %}
 
 {% block page_title %}Dashboard{% endblock %}
 {% block page_subtitle %}Tudo num so lugar, como seu HD de fotos, mas organizado.{% endblock %}
@@ -12,16 +13,16 @@
 
 <section class="finance-summary">
   <article class="money-card income">
-    <div><span>Receitas</span><small>Recebidos</small><strong>R$ {{ totais.receitas_recebidas|floatformat:2 }}</strong></div>
-    <div><i data-lucide="dollar-sign"></i><small>A receber</small><b>R$ {{ totais.receitas_a_receber|floatformat:2 }}</b></div>
+    <div><span>Receitas</span><small>Recebidos</small><strong>{{ totais.receitas_recebidas|brl }}</strong></div>
+    <div><i data-lucide="dollar-sign"></i><small>A receber</small><b>{{ totais.receitas_a_receber|brl }}</b></div>
   </article>
   <article class="money-card expense">
-    <div><span>Despesas</span><small>Pagos</small><strong>R$ {{ totais.despesas_pagas|floatformat:2 }}</strong></div>
-    <div><i data-lucide="dollar-sign"></i><small>A pagar</small><b>R$ {{ totais.despesas_a_pagar|floatformat:2 }}</b></div>
+    <div><span>Despesas</span><small>Pagos</small><strong>{{ totais.despesas_pagas|brl }}</strong></div>
+    <div><i data-lucide="dollar-sign"></i><small>A pagar</small><b>{{ totais.despesas_a_pagar|brl }}</b></div>
   </article>
   <article class="money-card balance">
-    <div><span>Balanco</span><small>Saldo atual</small><strong>R$ {{ totais.saldo_atual|floatformat:2 }}</strong></div>
-    <div><i data-lucide="scale"></i><small>Saldo previsto</small><b>R$ {{ totais.saldo_previsto|floatformat:2 }}</b></div>
+    <div><span>Balanco</span><small>Saldo atual</small><strong>{{ totais.saldo_atual|brl }}</strong></div>
+    <div><i data-lucide="scale"></i><small>Saldo previsto</small><b>{{ totais.saldo_previsto|brl }}</b></div>
   </article>
 </section>
 
@@ -57,10 +58,11 @@
   <article class="panel">
     <div class="panel-head"><h2>Formas de pagamento</h2></div>
     <div class="payment-list">
-      <div><span class="dot green"></span>Pix <b>prioritario</b></div>
-      <div><span class="dot blue"></span>Cartao <b>parcelado</b></div>
-      <div><span class="dot amber"></span>Boleto <b>cobranca</b></div>
-      <div><span class="dot purple"></span>Dinheiro <b>a vista</b></div>
+      {% for forma in formas_pagamento %}
+        <div><span class="dot green"></span>{{ forma.nome }} <b>{{ forma.total|brl }}</b></div>
+      {% empty %}
+        <p class="empty">Nenhuma venda no mes.</p>
+      {% endfor %}
     </div>
   </article>
 
@@ -94,7 +96,7 @@
   <div class="panel">
     <div class="panel-head">
       <h2>Cobrancas para hoje</h2>
-      <a class="button ghost" href="{% url 'alertas' %}">Ver alertas</a>
+      <a class="button ghost" href="{% url 'cobrancas' %}">Abrir cobrancas</a>
     </div>
     <div class="list">
       {% for parcela in parcelas_alerta %}
@@ -103,7 +105,7 @@
             <strong>{{ parcela.venda.cliente.nome }}</strong>
             <span>{{ parcela.venda.titulo }} - parcela {{ parcela.numero }} vence em {{ parcela.vencimento|date:"d/m/Y" }}</span>
           </div>
-          <b>R$ {{ parcela.valor|floatformat:2 }}</b>
+          <b>{{ parcela.valor|brl }}</b>
         </div>
       {% empty %}
         <p class="empty">Sem cobrancas pendentes no momento.</p>

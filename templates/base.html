@@ -4,16 +4,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CRM Fotografos</title>
+  <title>CRM João Bosco Fotografos</title>
   <link rel="stylesheet" href="{% static 'crm/styles.css' %}">
   <script src="https://unpkg.com/lucide@latest" defer></script>
 </head>
 <body>
   <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <span class="brand-mark">CF</span>
+      <span class="brand-mark">JB</span>
       <div>
-        <strong>CRM Fotografos</strong>
+        <strong>CRM João Bosco Fotografia</strong>
         <small>Vendas e relacionamento</small>
       </div>
     </div>
@@ -22,7 +22,10 @@
       <a href="{% url 'financeiro' %}"><i data-lucide="wallet-cards"></i>Financeiro</a>
       <a href="{% url 'despesas' %}"><i data-lucide="receipt-text"></i>Despesas</a>
       <a href="{% url 'pipeline' %}"><i data-lucide="kanban-square"></i>Pipeline</a>
+      <a href="{% url 'eventos' %}"><i data-lucide="party-popper"></i>Eventos</a>
+      <a href="{% url 'relatorios' %}"><i data-lucide="chart-column"></i>Relatorios</a>
       <a href="{% url 'agenda' %}"><i data-lucide="calendar-days"></i>Agenda</a>
+      <a href="{% url 'cobrancas' %}"><i data-lucide="badge-dollar-sign"></i>Cobrancas</a>
       <a href="{% url 'clientes' %}"><i data-lucide="contact-round"></i>Clientes</a>
       <a href="{% url 'documentos' %}"><i data-lucide="file-check-2"></i>Documentos</a>
       <a href="{% url 'alertas' %}"><i data-lucide="bell-ring"></i>Alertas</a>

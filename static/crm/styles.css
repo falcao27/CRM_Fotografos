@@ -432,6 +432,13 @@ textarea {
   resize: vertical;
 }
 
+input[type="checkbox"] {
+  width: auto;
+  min-height: 0;
+  transform: scale(1.15);
+  accent-color: var(--accent);
+}
+
 .actions {
   white-space: nowrap;
 }
@@ -582,6 +589,11 @@ label span {
 
 label.wide {
   grid-column: 1 / -1;
+}
+
+label.is-hidden,
+.conditional-field.is-hidden {
+  display: none;
 }
 
 label em {

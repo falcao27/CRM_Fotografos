@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% load crm_format %}
+
+{% block page_title %}Cobrancas{% endblock %}
+{% block page_subtitle %}Acompanhe pagamentos em aberto e baixe parcelas recebidas.{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <div class="panel-head"><h2>Pagamentos a receber</h2></div>
+  <div class="payment-accordion">
+    {% for item in pagamentos_por_cliente %}
+      <details class="payment-client" open>
+        <summary>
+          <strong>{{ item.cliente.nome }}</strong>
+          <span>{{ item.total|brl }}</span>
+        </summary>
+        <div class="payment-details">
+          {% for parcela in item.parcelas %}
+            <div class="payment-detail-row">
+              <div>
+                <strong>Parcela {{ parcela.numero }}/{{ parcela.venda.quantidade_parcelas }}</strong>
+                <small>{{ parcela.venda.titulo }}</small>
+              </div>
+              <div>
+                <b>{{ parcela.valor|brl }}</b>
+                <small>{{ parcela.vencimento|date:"d/m/Y" }}</small>
+              </div>
+              <form class="inline-form" method="post" action="{% url 'parcela_marcar_pago' parcela.pk %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{% url 'cobrancas' %}">
+                <button class="button ghost" type="submit"><i data-lucide="check"></i>Pago</button>
+              </form>
+            </div>
+          {% endfor %}
+        </div>
+      </details>
+    {% empty %}
+      <p class="empty">Nenhuma cobranca pendente.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

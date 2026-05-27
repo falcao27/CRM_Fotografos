@@ -1,3 +1,5 @@
+{% load crm_format %}
+
 <div class="drawer-head">
   <div>
     <span>Cliente</span>
@@ -12,7 +14,7 @@
 <div class="drawer-summary">
   <div>
     <span>Total em vendas</span>
-    <strong>R$ {{ totais|floatformat:2 }}</strong>
+    <strong>{{ totais|brl }}</strong>
   </div>
   <a class="button ghost" href="{% url 'cliente_editar' cliente.pk %}"><i data-lucide="contact-round"></i>Editar cliente</a>
 </div>
@@ -27,7 +29,7 @@
         </div>
         <div class="sale-total">
           <span class="badge {{ venda.status }}">{{ venda.get_status_display }}</span>
-          <strong>R$ {{ venda.valor_total|floatformat:2 }}</strong>
+          <strong>{{ venda.valor_total|brl }}</strong>
         </div>
       </div>
 
@@ -35,7 +37,7 @@
         {% for parcela in venda.parcelas.all %}
           <div class="installment {% if parcela.deve_alertar %}attention{% endif %}">
             <span>#{{ parcela.numero }}</span>
-            <strong>R$ {{ parcela.valor|floatformat:2 }}</strong>
+            <strong>{{ parcela.valor|brl }}</strong>
             <small>Vence {{ parcela.vencimento|date:"d/m/Y" }}</small>
             <small>Lembrete {{ parcela.lembrete_em|date:"d/m/Y" }}</small>
             <span class="badge {{ parcela.status_financeiro }}">{{ parcela.status_financeiro_label }}</span>

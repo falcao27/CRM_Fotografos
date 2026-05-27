@@ -1,6 +1,10 @@
-from django import forms
+from calendar import monthrange
+from decimal import Decimal
 
-from .models import Cliente, Despesa, Documento, Oportunidade, Parcela, Tarefa, Venda
+from django import forms
+from django.utils import timezone
+
+from .models import Cliente, Despesa, Documento, Evento, LembreteAnual, Oportunidade, Parcela, Tarefa, Venda
 
 
 class DateInput(forms.DateInput):
@@ -9,6 +13,21 @@ class DateInput(forms.DateInput):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("format", "%Y-%m-%d")
         super().__init__(*args, **kwargs)
+
+
+class CurrencyField(forms.DecimalField):
+    def to_python(self, value):
+        if isinstance(value, str):
+            value = value.strip().replace(".", "").replace(",", ".")
+        return super().to_python(value)
+
+
+def add_months(data, meses):
+    mes = data.month - 1 + meses
+    ano = data.year + mes // 12
+    mes = mes % 12 + 1
+    dia = min(data.day, monthrange(ano, mes)[1])
+    return data.replace(year=ano, month=mes, day=dia)
 
 
 class ClienteForm(forms.ModelForm):
@@ -82,24 +101,244 @@ class DespesaForm(forms.ModelForm):
 
 
 class OportunidadeForm(forms.ModelForm):
+    nome = forms.CharField(label="Nome", max_length=160)
+    titulo = forms.ChoiceField(
+        label="Tipo de prospecção",
+        choices=[
+            ("Instagram", "Instagram"),
+            ("WhatsApp", "WhatsApp"),
+            ("Site", "Site"),
+            ("Indicacao", "Indicação"),
+        ],
+    )
+
     class Meta:
         model = Oportunidade
         fields = [
-            "cliente",
-            "nome_lead",
+            "nome",
             "titulo",
+            "nome_indicacao",
             "tipo_evento",
-            "valor_estimado",
             "etapa",
-            "prioridade",
-            "origem",
-            "proximo_contato",
+            "data_festa",
+            "horario",
+            "contato",
             "observacoes",
         ]
+        labels = {
+            "nome_indicacao": "Nome de quem indicou",
+            "tipo_evento": "Tipo do evento",
+            "data_festa": "Data festa",
+            "horario": "Horario",
+            "contato": "Contato",
+            "observacoes": "Observacao",
+        }
         widgets = {
-            "proximo_contato": DateInput(),
+            "data_festa": DateInput(),
+            "horario": forms.TimeInput(attrs={"type": "time"}),
             "observacoes": forms.Textarea(attrs={"rows": 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        instance = self.instance
+        if instance and instance.pk:
+            self.fields["nome"].initial = instance.nome_lead
+            valores = {valor for valor, _ in self.fields["titulo"].choices}
+            if instance.titulo and instance.titulo not in valores:
+                self.fields["titulo"].choices = [(instance.titulo, instance.titulo)] + list(self.fields["titulo"].choices)
+        self.fields["nome"].widget.attrs.update({"placeholder": "Digite o nome do novo lead", "autocomplete": "off"})
+
+    def save(self, commit=True):
+        oportunidade = super().save(commit=False)
+        nome = self.cleaned_data["nome"].strip()
+        nome_indicacao = self.cleaned_data.get("nome_indicacao", "").strip()
+        oportunidade.nome_lead = nome
+        oportunidade.nome_indicacao = nome_indicacao
+        oportunidade.cliente = None
+        oportunidade.origem = (
+            f"Indicação - {nome_indicacao}" if oportunidade.titulo == "Indicacao" and nome_indicacao else oportunidade.titulo
+        )
+        if commit:
+            oportunidade.save()
+            self.save_m2m()
+        return oportunidade
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("titulo") == "Indicacao" and not cleaned_data.get("nome_indicacao"):
+            self.add_error("nome_indicacao", "Informe o nome de quem indicou.")
+        return cleaned_data
+
+
+class EventoForm(forms.ModelForm):
+    nome = forms.CharField(label="Nome", max_length=160)
+    valor_cobrado = CurrencyField(
+        label="Valor cobrado",
+        max_digits=10,
+        decimal_places=2,
+        widget=forms.TextInput(attrs={"inputmode": "decimal", "placeholder": "0,00"}),
+    )
+
+    class Meta:
+        model = Evento
+        fields = [
+            "nome",
+            "tipo_evento",
+            "data_festa",
+            "horario",
+            "contato",
+            "valor_cobrado",
+            "forma_pagamento",
+            "pagamento_recebido",
+            "quantidade_parcelas",
+            "primeira_parcela",
+            "observacoes",
+        ]
+        labels = {
+            "tipo_evento": "Tipo do evento",
+            "data_festa": "Data festa",
+            "horario": "Horario",
+            "contato": "Contato",
+            "valor_cobrado": "Valor cobrado",
+            "forma_pagamento": "Forma de pagamento",
+            "pagamento_recebido": "Valor ja foi pago?",
+            "quantidade_parcelas": "Quantas vezes",
+            "primeira_parcela": "Data do primeiro pagamento",
+            "observacoes": "Observacao",
+        }
+        widgets = {
+            "data_festa": DateInput(),
+            "primeira_parcela": DateInput(),
+            "horario": forms.TimeInput(attrs={"type": "time"}),
+            "tipo_evento": forms.Select(),
+            "quantidade_parcelas": forms.NumberInput(attrs={"min": 1, "max": 60}),
+            "observacoes": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        instance = self.instance
+        if instance and instance.pk:
+            self.fields["nome"].initial = instance.cliente.nome if instance.cliente else instance.nome
+        clientes = Cliente.objects.order_by("nome")
+        vistos = set()
+        self.clientes_opcoes = []
+        for cliente in clientes:
+            chave = cliente.nome.strip().lower()
+            if not chave or chave in vistos:
+                continue
+            vistos.add(chave)
+            self.clientes_opcoes.append(cliente)
+        self.fields["nome"].widget.attrs.update(
+            {
+                "list": "clientes-cadastrados",
+                "placeholder": "Digite para buscar ou cadastrar novo cliente",
+                "autocomplete": "off",
+            }
+        )
+        self.fields["nome"].help_text = "Digite parte do nome para filtrar clientes cadastrados ou informe um nome novo."
+        self.fields["pagamento_recebido"].help_text = "Marque quando o valor ja entrou no caixa."
+        self.fields["quantidade_parcelas"].widget.attrs.update({"min": 1, "max": 60})
+
+    def clean(self):
+        cleaned_data = super().clean()
+        forma_pagamento = cleaned_data.get("forma_pagamento")
+        quantidade = cleaned_data.get("quantidade_parcelas") or 1
+        if forma_pagamento not in {"boleto", "cartao"}:
+            cleaned_data["quantidade_parcelas"] = 1
+        elif quantidade < 1:
+            self.add_error("quantidade_parcelas", "Informe pelo menos 1 parcela.")
+        return cleaned_data
+
+    def save(self, commit=True):
+        evento = super().save(commit=False)
+        nome = self.cleaned_data["nome"].strip()
+        evento.nome = nome
+        if evento.forma_pagamento not in {"boleto", "cartao"}:
+            evento.quantidade_parcelas = 1
+        cliente = Cliente.objects.filter(nome__iexact=nome).first()
+        if not cliente:
+            cliente = Cliente(nome=nome)
+        cliente.telefone = evento.contato or cliente.telefone
+        cliente.tipo_evento = evento.tipo_evento or cliente.tipo_evento
+        cliente.data_evento = evento.data_festa or cliente.data_evento
+        cliente.observacoes = evento.observacoes or cliente.observacoes
+        if commit:
+            cliente.save()
+            evento.cliente = cliente
+            evento.save()
+            self.sincronizar_venda(evento)
+            self.sincronizar_lembrete_anual(evento)
+            self.save_m2m()
+        else:
+            evento.cliente = cliente
+        return evento
+
+    def sincronizar_venda(self, evento):
+        if not evento.cliente_id or not evento.valor_cobrado:
+            return None
+
+        venda = evento.venda or Venda()
+        venda.cliente = evento.cliente
+        venda.titulo = evento.tipo_evento or f"Evento - {evento.nome}"
+        venda.valor_total = evento.valor_cobrado
+        venda.forma_pagamento = evento.forma_pagamento
+        venda.condicao_pagamento = "parcelado" if evento.quantidade_parcelas > 1 else "avista"
+        venda.quantidade_parcelas = evento.quantidade_parcelas
+        venda.data_venda = venda.data_venda or timezone.localdate()
+        pagamento_recebido = evento.pagamento_recebido and (
+            evento.quantidade_parcelas == 1 or evento.forma_pagamento == "cartao"
+        )
+        venda.status = "pago" if pagamento_recebido else "pendente"
+        venda.observacoes = evento.observacoes
+        venda.save()
+
+        if evento.venda_id != venda.pk:
+            evento.venda = venda
+            evento.save(update_fields=["venda", "atualizado_em"])
+
+        quantidade = max(evento.quantidade_parcelas, 1)
+        valor_base = (evento.valor_cobrado / quantidade).quantize(Decimal("0.01"))
+        restante = evento.valor_cobrado
+        parcelas_mantidas = []
+        hoje = timezone.localdate()
+        primeira_parcela = evento.primeira_parcela or hoje
+        for numero in range(1, quantidade + 1):
+            parcela = venda.parcelas.filter(numero=numero).first() or Parcela(venda=venda, numero=numero)
+            valor = valor_base if numero < quantidade else restante
+            parcela.valor = valor
+            parcela.vencimento = add_months(primeira_parcela, numero - 1)
+            parcela.lembrete_em = parcela.vencimento
+            parcela.status = "pago" if pagamento_recebido else "pendente"
+            parcela.data_pagamento = hoje if parcela.status == "pago" else None
+            parcela.observacoes = "Gerada automaticamente pelo cadastro do evento."
+            parcela.save()
+            parcelas_mantidas.append(parcela.pk)
+            restante -= valor
+        venda.parcelas.exclude(pk__in=parcelas_mantidas).delete()
+        return venda
+
+    def sincronizar_lembrete_anual(self, evento):
+        if evento.tipo_evento not in {"aniversario", "aniversario_infantil"} or not evento.data_festa:
+            LembreteAnual.objects.filter(evento=evento).delete()
+            return None
+
+        data_proximo_evento = add_months(evento.data_festa, 12)
+        data_alerta = add_months(data_proximo_evento, -2)
+        lembrete, _ = LembreteAnual.objects.update_or_create(
+            evento=evento,
+            defaults={
+                "cliente": evento.cliente,
+                "nome": evento.nome,
+                "contato": evento.contato,
+                "data_original": evento.data_festa,
+                "data_proximo_evento": data_proximo_evento,
+                "data_alerta": data_alerta,
+                "observacoes": evento.observacoes,
+            },
+        )
+        return lembrete
 
 
 class TarefaForm(forms.ModelForm):

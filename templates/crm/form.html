@@ -9,9 +9,16 @@
     {% csrf_token %}
     <div class="form-grid">
       {% for field in form %}
-        <label class="{% if field.field.widget.input_type == 'textarea' %}wide{% endif %}">
+        <label class="{% if field.field.widget.input_type == 'textarea' %}wide{% endif %}{% if field.name == 'nome_indicacao' or field.name == 'quantidade_parcelas' or field.name == 'primeira_parcela' %} conditional-field{% endif %}"{% if field.name == 'nome_indicacao' %} data-field="nome-indicacao"{% elif field.name == 'quantidade_parcelas' %} data-field="quantidade-parcelas"{% elif field.name == 'primeira_parcela' %} data-field="primeira-parcela"{% endif %}>
           <span>{{ field.label }}</span>
           {{ field }}
+          {% if field.name == "nome" and form.clientes_opcoes %}
+            <datalist id="clientes-cadastrados">
+              {% for cliente in form.clientes_opcoes %}
+                <option value="{{ cliente.nome }}" label="{% if cliente.telefone %}{{ cliente.telefone }}{% else %}Cliente cadastrado{% endif %}"></option>
+              {% endfor %}
+            </datalist>
+          {% endif %}
           {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
           {% for error in field.errors %}<em>{{ error }}</em>{% endfor %}
         </label>
@@ -23,5 +30,52 @@
     </div>
   </form>
 </section>
-{% endblock %}
 
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    const prospeccao = document.getElementById("id_titulo");
+    const indicacao = document.querySelector('[data-field="nome-indicacao"]');
+    const nome = document.getElementById("id_nome");
+    const contato = document.getElementById("id_contato");
+    const formaPagamento = document.getElementById("id_forma_pagamento");
+    const parcelas = document.querySelector('[data-field="quantidade-parcelas"]');
+    const primeiraParcela = document.querySelector('[data-field="primeira-parcela"]');
+    const clientes = {
+      {% if form.clientes_opcoes %}
+        {% for cliente in form.clientes_opcoes %}
+          "{{ cliente.nome|escapejs }}": "{{ cliente.telefone|escapejs }}"{% if not forloop.last %},{% endif %}
+        {% endfor %}
+      {% endif %}
+    };
+
+    function alternarIndicacao() {
+      if (!prospeccao || !indicacao) return;
+      const exibir = prospeccao.value === "Indicacao";
+      indicacao.classList.toggle("is-hidden", !exibir);
+      const campo = indicacao.querySelector("input, select, textarea");
+      if (campo) campo.required = exibir;
+    }
+
+    function preencherContato() {
+      if (!nome || !contato || contato.value) return;
+      const telefone = clientes[nome.value];
+      if (telefone) contato.value = telefone;
+    }
+
+    function alternarParcelas() {
+      if (!formaPagamento || !parcelas) return;
+      const exibir = ["boleto", "cartao"].includes(formaPagamento.value);
+      parcelas.classList.toggle("is-hidden", !exibir);
+      if (primeiraParcela) primeiraParcela.classList.toggle("is-hidden", !exibir);
+      const campo = parcelas.querySelector("input, select, textarea");
+      if (campo && !exibir) campo.value = 1;
+    }
+
+    alternarIndicacao();
+    alternarParcelas();
+    if (prospeccao) prospeccao.addEventListener("change", alternarIndicacao);
+    if (formaPagamento) formaPagamento.addEventListener("change", alternarParcelas);
+    if (nome) nome.addEventListener("change", preencherContato);
+  });
+</script>
+{% endblock %}

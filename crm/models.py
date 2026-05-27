@@ -176,12 +176,16 @@ class Oportunidade(models.Model):
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, related_name="oportunidades")
     nome_lead = models.CharField(max_length=160)
     titulo = models.CharField(max_length=160)
+    nome_indicacao = models.CharField(max_length=160, blank=True)
     tipo_evento = models.CharField(max_length=100, blank=True)
     valor_estimado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     etapa = models.CharField(max_length=20, choices=ETAPA_CHOICES, default="novo")
     prioridade = models.CharField(max_length=20, choices=PRIORIDADE_CHOICES, default="media")
     origem = models.CharField(max_length=90, blank=True)
     proximo_contato = models.DateField(null=True, blank=True)
+    data_festa = models.DateField(null=True, blank=True)
+    horario = models.TimeField(null=True, blank=True)
+    contato = models.CharField(max_length=80, blank=True)
     observacoes = models.TextField(blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
@@ -191,6 +195,107 @@ class Oportunidade(models.Model):
 
     def __str__(self):
         return f"{self.nome_lead} - {self.titulo}"
+
+
+class OportunidadePerdida(models.Model):
+    oportunidade = models.OneToOneField(
+        Oportunidade,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="registro_perdido",
+    )
+    nome = models.CharField(max_length=160)
+    tipo_prospeccao = models.CharField(max_length=160, blank=True)
+    nome_indicacao = models.CharField(max_length=160, blank=True)
+    tipo_evento = models.CharField(max_length=100, blank=True)
+    data_festa = models.DateField(null=True, blank=True)
+    horario = models.TimeField(null=True, blank=True)
+    contato = models.CharField(max_length=80, blank=True)
+    observacoes = models.TextField(blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-atualizado_em", "nome"]
+
+    def __str__(self):
+        return self.nome
+
+
+class Evento(models.Model):
+    TIPO_CHOICES = [
+        ("casamento", "Casamento"),
+        ("pre_wedding", "Pre-wedding"),
+        ("ensaio_casal", "Ensaio de casal"),
+        ("ensaio_familia", "Ensaio de familia"),
+        ("gestante", "Gestante"),
+        ("newborn", "Newborn"),
+        ("acompanhamento_bebe", "Acompanhamento de bebe"),
+        ("batizado", "Batizado"),
+        ("aniversario", "Aniversario"),
+        ("aniversario_infantil", "Aniversario infantil"),
+        ("debutante", "15 anos / debutante"),
+        ("formatura", "Formatura"),
+        ("corporativo", "Corporativo"),
+        ("evento_social", "Evento social"),
+        ("evento_religioso", "Evento religioso"),
+        ("ensaio_feminino", "Ensaio feminino"),
+        ("ensaio_masculino", "Ensaio masculino"),
+        ("retrato_profissional", "Retrato profissional"),
+        ("branding", "Branding pessoal"),
+        ("produto", "Produto"),
+        ("imobiliario", "Imobiliario"),
+        ("esportivo", "Esportivo"),
+        ("pet", "Pet"),
+        ("outro", "Outro"),
+    ]
+
+    cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, related_name="eventos")
+    venda = models.OneToOneField(Venda, on_delete=models.SET_NULL, null=True, blank=True, related_name="evento")
+    nome = models.CharField(max_length=160)
+    tipo_evento = models.CharField(max_length=100, choices=TIPO_CHOICES, blank=True)
+    data_festa = models.DateField(null=True, blank=True)
+    horario = models.TimeField(null=True, blank=True)
+    contato = models.CharField(max_length=80, blank=True)
+    valor_cobrado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    forma_pagamento = models.CharField(max_length=20, choices=Venda.FORMA_CHOICES, default="pix")
+    pagamento_recebido = models.BooleanField(default=False)
+    quantidade_parcelas = models.PositiveIntegerField(default=1)
+    primeira_parcela = models.DateField(null=True, blank=True)
+    observacoes = models.TextField(blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["data_festa", "horario", "nome"]
+
+    def __str__(self):
+        return f"{self.nome} - {self.get_tipo_evento_display() if self.tipo_evento else 'Evento'}"
+
+
+class LembreteAnual(models.Model):
+    evento = models.OneToOneField(Evento, on_delete=models.CASCADE, related_name="lembrete_anual")
+    cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, related_name="lembretes_anuais")
+    nome = models.CharField(max_length=160)
+    contato = models.CharField(max_length=80, blank=True)
+    data_original = models.DateField()
+    data_proximo_evento = models.DateField()
+    data_alerta = models.DateField()
+    observacoes = models.TextField(blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["data_alerta", "nome"]
+
+    def __str__(self):
+        return f"{self.nome} - {self.data_proximo_evento:%d/%m/%Y}"
+
+    @property
+    def ativo(self):
+        hoje = timezone.localdate()
+        return self.data_alerta <= hoje <= self.data_proximo_evento
 
 
 class Tarefa(models.Model):

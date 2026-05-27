@@ -1,7 +1,6 @@
 {% extends "base.html" %}
-
 {% block page_title %}Agenda inteligente{% endblock %}
-{% block page_subtitle %}Trabalhos, tarefas e pagamentos conectados em uma unica visao.{% endblock %}
+{% block page_subtitle %}Trabalhos e tarefas em uma unica visao.{% endblock %}
 
 {% block content %}
 <section class="toolbar">
@@ -9,56 +8,24 @@
   <a class="button" href="{% url 'tarefa_nova' %}"><i data-lucide="plus"></i>Nova tarefa</a>
 </section>
 
-<section class="agenda-grid">
-  <article class="panel">
-    <div class="panel-head"><h2>Compromissos e trabalhos</h2></div>
-    <div class="timeline-list">
-      {% for tarefa in tarefas %}
-        <div class="timeline-item {{ tarefa.tipo }}">
-          <div>
-            <strong>{{ tarefa.titulo }}</strong>
-            <small>{{ tarefa.data|date:"d/m/Y" }}{% if tarefa.hora %} - {{ tarefa.hora|time:"H:i" }}{% endif %}{% if tarefa.cliente %} - {{ tarefa.cliente.nome }}{% endif %}</small>
-          </div>
-          <div class="actions">
-            <span class="badge {{ tarefa.status }}">{{ tarefa.get_status_display }}</span>
-            <a class="icon-link" href="{% url 'tarefa_editar' tarefa.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
-            <a class="icon-link danger" href="{% url 'tarefa_excluir' tarefa.pk %}" title="Excluir"><i data-lucide="trash-2"></i></a>
-          </div>
+<section class="panel">
+  <div class="panel-head"><h2>Compromissos e trabalhos</h2></div>
+  <div class="timeline-list">
+    {% for tarefa in tarefas %}
+      <div class="timeline-item {{ tarefa.tipo }}">
+        <div>
+          <strong>{{ tarefa.titulo }}</strong>
+          <small>{{ tarefa.data|date:"d/m/Y" }}{% if tarefa.hora %} - {{ tarefa.hora|time:"H:i" }}{% endif %}{% if tarefa.cliente %} - {{ tarefa.cliente.nome }}{% endif %}</small>
         </div>
-      {% empty %}
-        <p class="empty">Nenhuma tarefa cadastrada.</p>
-      {% endfor %}
-    </div>
-  </article>
-
-  <article class="panel">
-    <div class="panel-head"><h2>Pagamentos a receber</h2></div>
-    <div class="payment-accordion">
-      {% for item in pagamentos_por_cliente %}
-        <details class="payment-client">
-          <summary>
-            <strong>{{ item.cliente.nome }}</strong>
-            <span>R$ {{ item.total|floatformat:2 }}</span>
-          </summary>
-          <div class="payment-details">
-            {% for parcela in item.parcelas %}
-              <div class="payment-detail-row">
-                <div>
-                  <strong>Parcela {{ parcela.numero }}/{{ parcela.venda.quantidade_parcelas }}</strong>
-                  <small>{{ parcela.venda.titulo }}</small>
-                </div>
-                <div>
-                  <b>R$ {{ parcela.valor|floatformat:2 }}</b>
-                  <small>{{ parcela.vencimento|date:"d/m/Y" }}</small>
-                </div>
-              </div>
-            {% endfor %}
-          </div>
-        </details>
-      {% empty %}
-        <p class="empty">Nenhum pagamento pendente na agenda.</p>
-      {% endfor %}
-    </div>
-  </article>
+        <div class="actions">
+          <span class="badge {{ tarefa.status }}">{{ tarefa.get_status_display }}</span>
+          <a class="icon-link" href="{% url 'tarefa_editar' tarefa.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
+          <a class="icon-link danger" href="{% url 'tarefa_excluir' tarefa.pk %}" title="Excluir"><i data-lucide="trash-2"></i></a>
+        </div>
+      </div>
+    {% empty %}
+      <p class="empty">Nenhuma tarefa cadastrada.</p>
+    {% endfor %}
+  </div>
 </section>
 {% endblock %}

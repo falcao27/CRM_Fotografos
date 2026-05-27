@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load crm_format %}
+
+{% block page_title %}Relatorios{% endblock %}
+{% block page_subtitle %}Acompanhe os principais numeros do CRM.{% endblock %}
+
+{% block content %}
+<section class="metric-grid">
+  <article class="metric"><i data-lucide="banknote"></i><span>Receita do Mes</span><strong>{{ receita_mes|brl }}</strong></article>
+  <article class="metric"><i data-lucide="receipt-text"></i><span>Despesas do Mes</span><strong>{{ despesa_mes|brl }}</strong></article>
+  <article class="metric"><i data-lucide="party-popper"></i><span>Eventos no Mes</span><strong>{{ eventos_mes }}</strong></article>
+  <article class="metric"><i data-lucide="target"></i><span>Oportunidades Abertas</span><strong>{{ oportunidades_abertas }}</strong></article>
+</section>
+
+<section class="split">
+  <article class="panel">
+    <div class="panel-head"><h2>Vendas recentes</h2></div>
+    <div class="list">
+      {% for venda in vendas_recentes %}
+        <div class="list-row">
+          <div>
+            <strong>{{ venda.cliente.nome }}</strong>
+            <span>{{ venda.titulo }} - {{ venda.get_forma_pagamento_display }}</span>
+          </div>
+          <b>{{ venda.valor_total|brl }}</b>
+        </div>
+      {% empty %}
+        <p class="empty">Nenhuma venda registrada neste mes.</p>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head"><h2>Eventos recentes</h2></div>
+    <div class="list">
+      {% for evento in eventos_recentes %}
+        <div class="list-row">
+          <div>
+            <strong>{{ evento.nome }}</strong>
+            <span>{{ evento.get_tipo_evento_display|default:"Evento" }}{% if evento.data_festa %} - {{ evento.data_festa|date:"d/m/Y" }}{% endif %}</span>
+          </div>
+          <b>{{ evento.valor_cobrado|brl }}</b>
+        </div>
+      {% empty %}
+        <p class="empty">Nenhum evento registrado neste mes.</p>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+{% endblock %}

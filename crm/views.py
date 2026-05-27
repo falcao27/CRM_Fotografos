@@ -12,10 +12,11 @@ from django.contrib import messages
 from django.http import HttpResponse
 from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 
-from .forms import ClienteForm, DespesaForm, DocumentoForm, OportunidadeForm, ParcelaForm, TarefaForm, VendaForm
-from .models import Cliente, Despesa, Documento, Oportunidade, Parcela, Tarefa, Venda
+from .forms import ClienteForm, DespesaForm, DocumentoForm, EventoForm, OportunidadeForm, ParcelaForm, TarefaForm, VendaForm
+from .models import Cliente, Despesa, Documento, Evento, LembreteAnual, Oportunidade, OportunidadePerdida, Parcela, Tarefa, Venda
 from .pdf import gerar_pdf_documento, nome_pdf_documento
 from .services import EnvioDocumentoError, enviar_documento, link_whatsapp_manual
 
@@ -212,10 +213,12 @@ def dashboard(request):
     hoje = timezone.localdate()
     inicio_mes = hoje.replace(day=1)
     fim_mes = hoje.replace(day=monthrange(hoje.year, hoje.month)[1])
-    receitas_recebidas = Parcela.objects.filter(status="pago", data_pagamento__range=(inicio_mes, fim_mes)).aggregate(
+    vendas_eventos = Venda.objects.filter(evento__isnull=False).exclude(status="cancelado")
+    parcelas_eventos = Parcela.objects.filter(venda__evento__isnull=False).exclude(venda__status="cancelado")
+    receitas_recebidas = parcelas_eventos.filter(status="pago", data_pagamento__range=(inicio_mes, fim_mes)).aggregate(
         total=Sum("valor")
     )["total"] or 0
-    receitas_a_receber = Parcela.objects.exclude(status="pago").filter(vencimento__range=(inicio_mes, fim_mes)).aggregate(
+    receitas_a_receber = parcelas_eventos.exclude(status="pago").aggregate(
         total=Sum("valor")
     )["total"] or 0
     despesas_pagas = Despesa.objects.filter(status="pago", data__range=(inicio_mes, fim_mes)).aggregate(total=Sum("valor"))[
@@ -230,39 +233,55 @@ def dashboard(request):
     totais = {
         "clientes": Cliente.objects.count(),
         "clientes_mes": Cliente.objects.filter(criado_em__year=hoje.year, criado_em__month=hoje.month).count(),
-        "vendas": Venda.objects.count(),
-        "receita_total": Venda.objects.exclude(status="cancelado").aggregate(total=Sum("valor_total"))["total"] or 0,
-        "receita_paga": Parcela.objects.filter(status="pago").aggregate(total=Sum("valor"))["total"] or 0,
-        "pendente": Parcela.objects.exclude(status="pago").aggregate(total=Sum("valor"))["total"] or 0,
+        "vendas": vendas_eventos.count(),
+        "receita_total": vendas_eventos.aggregate(total=Sum("valor_total"))["total"] or 0,
+        "receita_paga": parcelas_eventos.filter(status="pago").aggregate(total=Sum("valor"))["total"] or 0,
+        "pendente": parcelas_eventos.exclude(status="pago").aggregate(total=Sum("valor"))["total"] or 0,
         "receitas_recebidas": receitas_recebidas,
         "receitas_a_receber": receitas_a_receber,
         "despesas_pagas": despesas_pagas,
         "despesas_a_pagar": despesas_a_pagar,
         "saldo_atual": saldo_atual,
         "saldo_previsto": saldo_previsto,
-        "contratos_mes": Venda.objects.filter(data_venda__range=(inicio_mes, fim_mes)).count(),
-        "trabalhos_mes": Tarefa.objects.filter(tipo="trabalho", data__range=(inicio_mes, fim_mes)).count(),
+        "contratos_mes": vendas_eventos.filter(data_venda__range=(inicio_mes, fim_mes)).count(),
+        "trabalhos_mes": Evento.objects.filter(data_festa__range=(inicio_mes, fim_mes)).count(),
         "tarefas_pendentes": Tarefa.objects.filter(status="pendente").count(),
         "tarefas_atrasadas": Tarefa.objects.filter(Q(status="atrasada") | Q(status="pendente", data__lt=hoje)).count(),
         "oportunidades": Oportunidade.objects.exclude(etapa__in=["fechado", "perdido"]).count(),
         "docs_pendentes": Documento.objects.filter(status="pendente").count(),
         "formularios_recebidos": Cliente.objects.filter(criado_em__date__gte=hoje - timedelta(days=30)).count(),
     }
-    parcelas_alerta = Parcela.objects.exclude(status="pago").filter(
+    parcelas_alerta = parcelas_eventos.exclude(status="pago").filter(
         Q(vencimento__lt=hoje) | Q(lembrete_em__lte=hoje)
     )[:8]
     recompra_alerta = [cliente for cliente in Cliente.objects.all() if cliente.precisa_alerta_recompra][:8]
-    ultimas_vendas = Venda.objects.select_related("cliente").prefetch_related("parcelas")[:8]
+    ultimas_vendas = vendas_eventos.select_related("cliente").prefetch_related("parcelas")[:8]
     tarefas_semana = Tarefa.objects.select_related("cliente").filter(data__range=(hoje, hoje + timedelta(days=7)))[:5]
-    ultimos_lancamentos = list(Despesa.objects.all()[:4]) + list(Venda.objects.select_related("cliente")[:4])
+    ultimos_lancamentos = list(Despesa.objects.all()[:4]) + list(vendas_eventos.select_related("cliente")[:4])
     concluidas = tarefas_mes.filter(status="concluida").count()
     total_tarefas_mes = tarefas_mes.count()
     progresso_tarefas = round((concluidas / total_tarefas_mes) * 100) if total_tarefas_mes else 0
+    formas_pagamento = []
+    formas_labels = dict(Venda.FORMA_CHOICES)
+    formas_qs = (
+        parcelas_eventos.filter(status="pago", data_pagamento__range=(inicio_mes, fim_mes))
+        .values("venda__forma_pagamento")
+        .annotate(total=Sum("valor"), quantidade=Count("id"))
+        .order_by("-total")
+    )
+    for item in formas_qs:
+        formas_pagamento.append(
+            {
+                "nome": formas_labels.get(item["venda__forma_pagamento"], item["venda__forma_pagamento"]),
+                "total": item["total"] or 0,
+                "quantidade": item["quantidade"],
+            }
+        )
     meses = []
     for offset in range(5, -1, -1):
         mes_ref = add_months(inicio_mes, -offset)
         mes_fim = mes_ref.replace(day=monthrange(mes_ref.year, mes_ref.month)[1])
-        recebido = Parcela.objects.filter(status="pago", data_pagamento__range=(mes_ref, mes_fim)).aggregate(
+        recebido = parcelas_eventos.filter(status="pago", data_pagamento__range=(mes_ref, mes_fim)).aggregate(
             total=Sum("valor")
         )["total"] or 0
         pago = Despesa.objects.filter(status="pago", data__range=(mes_ref, mes_fim)).aggregate(total=Sum("valor"))[
@@ -274,8 +293,8 @@ def dashboard(request):
                 "nome": mes_ref.strftime("%b"),
                 "recebido": recebido,
                 "pago": pago,
-                "recebido_altura": max(int((recebido / escala) * 64), 6) if recebido else 6,
-                "pago_altura": max(int((pago / escala) * 64), 6) if pago else 6,
+                "recebido_altura": max(int((recebido / escala) * 64), 6) if recebido else 0,
+                "pago_altura": max(int((pago / escala) * 64), 6) if pago else 0,
             }
         )
     return render(
@@ -288,6 +307,7 @@ def dashboard(request):
             "ultimas_vendas": ultimas_vendas,
             "tarefas_semana": tarefas_semana,
             "progresso_tarefas": progresso_tarefas,
+            "formas_pagamento": formas_pagamento,
             "meses": meses,
             "inicio_mes": inicio_mes,
             "fim_mes": fim_mes,
@@ -423,6 +443,10 @@ def alertas(request):
     clientes_copia_cartao = Cliente.objects.none()
     if hoje.weekday() == 0:
         clientes_copia_cartao = Cliente.objects.filter(data_evento__range=(hoje - timedelta(days=7), hoje - timedelta(days=1)))
+    lembretes_anuais = LembreteAnual.objects.select_related("cliente", "evento").filter(
+        data_alerta__lte=hoje,
+        data_proximo_evento__gte=hoje,
+    )
     return render(
         request,
         "crm/alertas.html",
@@ -432,6 +456,7 @@ def alertas(request):
             "clientes_evento_hoje": clientes_evento_hoje,
             "clientes_edicao": clientes_edicao,
             "clientes_copia_cartao": clientes_copia_cartao,
+            "lembretes_anuais": lembretes_anuais,
             "hoje": hoje,
         },
     )
@@ -515,10 +540,61 @@ def oportunidade_form(request, pk=None):
     oportunidade = get_object_or_404(Oportunidade, pk=pk) if pk else None
     form = OportunidadeForm(request.POST or None, instance=oportunidade)
     if request.method == "POST" and form.is_valid():
-        form.save()
+        oportunidade = form.save()
         messages.success(request, "Oportunidade salva com sucesso.")
+        if oportunidade.etapa == "fechado":
+            evento = preparar_evento_da_oportunidade(oportunidade)
+            messages.success(request, "Oportunidade fechada. Confira e complete o evento antes do cadastro do cliente.")
+            return redirect(f"{reverse('evento_editar', args=[evento.pk])}?proximo=cliente&oportunidade={oportunidade.pk}")
+        if oportunidade.etapa == "perdido":
+            registrar_oportunidade_perdida(oportunidade)
+            messages.success(request, "Oportunidade perdida arquivada para contato futuro.")
         return redirect("pipeline")
     return render(request, "crm/form.html", {"form": form, "titulo": "Oportunidade", "voltar": "pipeline"})
+
+
+def preparar_evento_da_oportunidade(oportunidade):
+    evento = (
+        Evento.objects.filter(
+            nome__iexact=oportunidade.nome_lead,
+            data_festa=oportunidade.data_festa,
+            tipo_evento=oportunidade.tipo_evento,
+        )
+        .order_by("-atualizado_em")
+        .first()
+    )
+    if not evento:
+        evento = Evento(nome=oportunidade.nome_lead)
+    evento.nome = oportunidade.nome_lead
+    evento.tipo_evento = oportunidade.tipo_evento
+    evento.data_festa = oportunidade.data_festa
+    evento.horario = oportunidade.horario
+    evento.contato = oportunidade.contato
+    if oportunidade.valor_estimado and not evento.valor_cobrado:
+        evento.valor_cobrado = oportunidade.valor_estimado
+    evento.observacoes = oportunidade.observacoes
+    evento.save()
+
+    oportunidade.etapa = "fechado"
+    oportunidade.save(update_fields=["etapa", "atualizado_em"])
+    return evento
+
+
+def registrar_oportunidade_perdida(oportunidade):
+    registro, _ = OportunidadePerdida.objects.update_or_create(
+        oportunidade=oportunidade,
+        defaults={
+            "nome": oportunidade.nome_lead,
+            "tipo_prospeccao": oportunidade.origem or oportunidade.titulo,
+            "nome_indicacao": oportunidade.nome_indicacao,
+            "tipo_evento": oportunidade.tipo_evento,
+            "data_festa": oportunidade.data_festa,
+            "horario": oportunidade.horario,
+            "contato": oportunidade.contato,
+            "observacoes": oportunidade.observacoes,
+        },
+    )
+    return registro
 
 
 def oportunidade_mover(request, pk, etapa):
@@ -526,21 +602,14 @@ def oportunidade_mover(request, pk, etapa):
     if etapa in dict(Oportunidade.ETAPA_CHOICES):
         oportunidade.etapa = etapa
         if etapa == "fechado":
-            cliente = oportunidade.cliente
-            if not cliente:
-                cliente, _ = Cliente.objects.get_or_create(
-                    nome=oportunidade.nome_lead,
-                    defaults={
-                        "origem": oportunidade.origem,
-                        "tipo_evento": oportunidade.tipo_evento or oportunidade.titulo,
-                        "proxima_oportunidade": oportunidade.proximo_contato,
-                        "observacoes": f"Criado automaticamente ao fechar a oportunidade: {oportunidade.titulo}.",
-                    },
-                )
-                oportunidade.cliente = cliente
-            oportunidade.save(update_fields=["etapa", "cliente", "atualizado_em"])
-            messages.success(request, "Oportunidade fechada. Confira e complete o cadastro do cliente.")
-            return redirect("cliente_editar", pk=cliente.pk)
+            evento = preparar_evento_da_oportunidade(oportunidade)
+            messages.success(request, "Oportunidade fechada. Confira e complete o evento antes do cadastro do cliente.")
+            return redirect(f"{reverse('evento_editar', args=[evento.pk])}?proximo=cliente&oportunidade={oportunidade.pk}")
+        if etapa == "perdido":
+            oportunidade.save(update_fields=["etapa", "atualizado_em"])
+            registrar_oportunidade_perdida(oportunidade)
+            messages.success(request, "Oportunidade perdida arquivada para contato futuro.")
+            return redirect("pipeline")
         oportunidade.save(update_fields=["etapa", "atualizado_em"])
     return redirect("pipeline")
 
@@ -557,8 +626,13 @@ def oportunidade_excluir(request, pk):
 def agenda(request):
     hoje = timezone.localdate()
     tarefas = Tarefa.objects.select_related("cliente").filter(data__gte=hoje - timedelta(days=7))[:80]
+    return render(request, "crm/agenda.html", {"tarefas": tarefas, "hoje": hoje})
+
+
+def cobrancas(request):
+    hoje = timezone.localdate()
     pagamentos = Parcela.objects.select_related("venda", "venda__cliente").exclude(status="pago").filter(
-        vencimento__gte=hoje - timedelta(days=7)
+        venda__evento__isnull=False
     )[:40]
     pagamentos_por_cliente = {}
     for parcela in pagamentos:
@@ -571,9 +645,90 @@ def agenda(request):
         item["total"] += parcela.valor
     return render(
         request,
-        "crm/agenda.html",
-        {"tarefas": tarefas, "pagamentos_por_cliente": pagamentos_por_cliente.values(), "hoje": hoje},
+        "crm/cobrancas.html",
+        {"pagamentos_por_cliente": pagamentos_por_cliente.values(), "hoje": hoje},
     )
+
+
+def parcela_marcar_pago(request, pk):
+    parcela = get_object_or_404(Parcela.objects.select_related("venda", "venda__evento"), pk=pk)
+    if request.method == "POST":
+        hoje = timezone.localdate()
+        parcela.status = "pago"
+        parcela.data_pagamento = hoje
+        parcela.save(update_fields=["status", "data_pagamento"])
+
+        venda = parcela.venda
+        todas_pagas = not venda.parcelas.exclude(status="pago").exists()
+        if todas_pagas:
+            venda.status = "pago"
+            venda.save(update_fields=["status", "atualizado_em"])
+        elif venda.status == "pago":
+            venda.status = "pendente"
+            venda.save(update_fields=["status", "atualizado_em"])
+
+        if hasattr(venda, "evento"):
+            evento = venda.evento
+            evento.pagamento_recebido = todas_pagas
+            evento.save(update_fields=["pagamento_recebido", "atualizado_em"])
+
+        messages.success(request, "Pagamento marcado como recebido.")
+    return redirect(request.POST.get("next") or "cobrancas")
+
+
+def eventos(request):
+    busca = request.GET.get("q", "").strip()
+    eventos_qs = Evento.objects.select_related("cliente")
+    if busca:
+        eventos_qs = eventos_qs.filter(Q(nome__icontains=busca) | Q(cliente__nome__icontains=busca) | Q(contato__icontains=busca))
+    return render(request, "crm/eventos.html", {"eventos": eventos_qs, "busca": busca})
+
+
+def relatorios(request):
+    hoje = timezone.localdate()
+    inicio_mes = hoje.replace(day=1)
+    fim_mes = hoje.replace(day=monthrange(hoje.year, hoje.month)[1])
+    vendas_mes = Venda.objects.filter(evento__isnull=False).exclude(status="cancelado").filter(
+        data_venda__range=(inicio_mes, fim_mes)
+    )
+    despesas_mes = Despesa.objects.filter(Q(data__range=(inicio_mes, fim_mes)) | Q(vencimento__range=(inicio_mes, fim_mes)))
+    eventos_mes = Evento.objects.filter(data_festa__range=(inicio_mes, fim_mes))
+    contexto = {
+        "inicio_mes": inicio_mes,
+        "fim_mes": fim_mes,
+        "receita_mes": vendas_mes.aggregate(total=Sum("valor_total"))["total"] or 0,
+        "despesa_mes": despesas_mes.aggregate(total=Sum("valor"))["total"] or 0,
+        "eventos_mes": eventos_mes.count(),
+        "oportunidades_abertas": Oportunidade.objects.exclude(etapa__in=["fechado", "perdido"]).count(),
+        "vendas_recentes": vendas_mes.select_related("cliente")[:8],
+        "eventos_recentes": eventos_mes.select_related("cliente", "venda")[:8],
+    }
+    return render(request, "crm/relatorios.html", contexto)
+
+
+def evento_form(request, pk=None):
+    evento = get_object_or_404(Evento, pk=pk) if pk else None
+    form = EventoForm(request.POST or None, instance=evento)
+    if request.method == "POST" and form.is_valid():
+        evento = form.save()
+        messages.success(request, "Evento salvo com sucesso.")
+        if request.GET.get("proximo") == "cliente" and evento.cliente_id:
+            oportunidade_id = request.GET.get("oportunidade")
+            if oportunidade_id:
+                Oportunidade.objects.filter(pk=oportunidade_id).update(cliente=evento.cliente, atualizado_em=timezone.now())
+            messages.success(request, "Cliente criado ou atualizado a partir do evento.")
+            return redirect("cliente_editar", pk=evento.cliente_id)
+        return redirect("eventos")
+    return render(request, "crm/form.html", {"form": form, "titulo": "Evento", "voltar": "eventos"})
+
+
+def evento_excluir(request, pk):
+    evento = get_object_or_404(Evento, pk=pk)
+    if request.method == "POST":
+        evento.delete()
+        messages.success(request, "Evento excluido.")
+        return redirect("eventos")
+    return render(request, "crm/confirmar_exclusao.html", {"objeto": evento, "voltar": "eventos"})
 
 
 def tarefa_form(request, pk=None):

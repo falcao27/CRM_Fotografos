@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Cliente, Despesa, Documento, Oportunidade, Parcela, Tarefa, Venda
+from .models import Cliente, Despesa, Documento, Evento, LembreteAnual, Oportunidade, OportunidadePerdida, Parcela, Tarefa, Venda
 
 
 class ParcelaInline(admin.TabularInline):
@@ -36,9 +36,37 @@ class DespesaAdmin(admin.ModelAdmin):
 
 @admin.register(Oportunidade)
 class OportunidadeAdmin(admin.ModelAdmin):
-    list_display = ("nome_lead", "titulo", "valor_estimado", "etapa", "proximo_contato")
+    list_display = ("nome_lead", "titulo", "tipo_evento", "etapa", "data_festa", "contato")
     list_filter = ("etapa", "prioridade")
     search_fields = ("nome_lead", "titulo")
+
+
+@admin.register(OportunidadePerdida)
+class OportunidadePerdidaAdmin(admin.ModelAdmin):
+    list_display = ("nome", "tipo_prospeccao", "tipo_evento", "data_festa", "contato", "atualizado_em")
+    search_fields = ("nome", "contato", "tipo_evento")
+
+
+@admin.register(Evento)
+class EventoAdmin(admin.ModelAdmin):
+    list_display = (
+        "nome",
+        "cliente",
+        "tipo_evento",
+        "data_festa",
+        "valor_cobrado",
+        "forma_pagamento",
+        "pagamento_recebido",
+        "quantidade_parcelas",
+        "contato",
+    )
+    search_fields = ("nome", "cliente__nome", "contato")
+
+
+@admin.register(LembreteAnual)
+class LembreteAnualAdmin(admin.ModelAdmin):
+    list_display = ("nome", "data_original", "data_proximo_evento", "data_alerta", "contato")
+    search_fields = ("nome", "contato")
 
 
 @admin.register(Tarefa)

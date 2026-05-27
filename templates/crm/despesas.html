@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load crm_format %}
 
 {% block page_title %}Despesas{% endblock %}
 {% block page_subtitle %}Custos separados por categoria, vencimento, status e forma de pagamento.{% endblock %}
@@ -30,7 +31,7 @@
             <td>{{ despesa.vencimento|date:"d/m/Y" }}</td>
             <td>{{ despesa.get_forma_pagamento_display }}</td>
             <td><span class="badge {{ despesa.status }}">{{ despesa.get_status_display }}</span></td>
-            <td>R$ {{ despesa.valor|floatformat:2 }}</td>
+            <td>{{ despesa.valor|brl }}</td>
             <td class="actions">
               <a class="icon-link" href="{% url 'despesa_editar' despesa.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
               <a class="icon-link danger" href="{% url 'despesa_excluir' despesa.pk %}" title="Excluir"><i data-lucide="trash-2"></i></a>
@@ -44,4 +45,3 @@
   </div>
 </section>
 {% endblock %}
-
