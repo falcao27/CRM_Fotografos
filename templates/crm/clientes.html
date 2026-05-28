@@ -24,7 +24,7 @@
             <td>{{ cliente.tipo_evento }}<br><small>{{ cliente.data_evento|date:"d/m/Y" }}</small></td>
             <td>
               {% if cliente.proxima_oportunidade %}
-                {{ cliente.data_alerta_recompra|date:"d/m/Y" }}<br><small>Meta: {{ cliente.proxima_oportunidade|date:"d/m/Y" }}</small>
+                {{ cliente.proxima_oportunidade|date:"d/m/Y" }}<br><small>Contato para orcamento</small>
               {% else %}
                 <small>Sem data definida</small>
               {% endif %}
@@ -43,4 +43,3 @@
   </div>
 </section>
 {% endblock %}
-

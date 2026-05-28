@@ -9,7 +9,7 @@
     {% csrf_token %}
     <div class="form-grid">
       {% for field in form %}
-        <label class="{% if field.field.widget.input_type == 'textarea' %}wide{% endif %}{% if field.name == 'nome_indicacao' or field.name == 'quantidade_parcelas' or field.name == 'primeira_parcela' %} conditional-field{% endif %}"{% if field.name == 'nome_indicacao' %} data-field="nome-indicacao"{% elif field.name == 'quantidade_parcelas' %} data-field="quantidade-parcelas"{% elif field.name == 'primeira_parcela' %} data-field="primeira-parcela"{% endif %}>
+        <label class="{% if field.field.widget.input_type == 'textarea' %}wide{% endif %}{% if field.name == 'nome_indicacao' or field.name == 'quantidade_parcelas' or field.name == 'primeira_parcela' or field.name == 'valor_estimado' or field.name == 'valor_negociado' %} conditional-field{% endif %}"{% if field.name == 'nome_indicacao' %} data-field="nome-indicacao"{% elif field.name == 'quantidade_parcelas' %} data-field="quantidade-parcelas"{% elif field.name == 'primeira_parcela' %} data-field="primeira-parcela"{% elif field.name == 'valor_estimado' %} data-field="valor-orcamento"{% elif field.name == 'valor_negociado' %} data-field="valor-negociacao"{% endif %}>
           <span>{{ field.label }}</span>
           {{ field }}
           {% if field.name == "nome" and form.clientes_opcoes %}
@@ -38,8 +38,13 @@
     const nome = document.getElementById("id_nome");
     const contato = document.getElementById("id_contato");
     const formaPagamento = document.getElementById("id_forma_pagamento");
+    const etapa = document.getElementById("id_etapa");
+    const dataEvento = document.getElementById("id_data_evento");
+    const proximaOportunidade = document.getElementById("id_proxima_oportunidade");
     const parcelas = document.querySelector('[data-field="quantidade-parcelas"]');
     const primeiraParcela = document.querySelector('[data-field="primeira-parcela"]');
+    const valorOrcamento = document.querySelector('[data-field="valor-orcamento"]');
+    const valorNegociacao = document.querySelector('[data-field="valor-negociacao"]');
     const clientes = {
       {% if form.clientes_opcoes %}
         {% for cliente in form.clientes_opcoes %}
@@ -71,10 +76,56 @@
       if (campo && !exibir) campo.value = 1;
     }
 
+    function alternarValoresOportunidade() {
+      if (!etapa || !valorOrcamento) return;
+
+      const exibirOrcamento = ["orcamento", "negociacao"].includes(etapa.value);
+      const exibirNegociacao = etapa.value === "negociacao";
+      const campoOrcamento = valorOrcamento.querySelector("input, select, textarea");
+      const campoNegociacao = valorNegociacao ? valorNegociacao.querySelector("input, select, textarea") : null;
+
+      valorOrcamento.classList.toggle("is-hidden", !exibirOrcamento);
+      if (valorNegociacao) valorNegociacao.classList.toggle("is-hidden", !exibirNegociacao);
+
+      if (campoOrcamento) {
+        campoOrcamento.required = exibirOrcamento;
+        campoOrcamento.readOnly = exibirNegociacao && Boolean(campoOrcamento.value);
+      }
+      if (campoNegociacao) {
+        campoNegociacao.required = exibirNegociacao;
+      }
+    }
+
+    function formatarDataInput(data) {
+      const ano = data.getFullYear();
+      const mes = String(data.getMonth() + 1).padStart(2, "0");
+      const dia = String(data.getDate()).padStart(2, "0");
+      return `${ano}-${mes}-${dia}`;
+    }
+
+    function subtrairMeses(data, meses) {
+      const diaOriginal = data.getDate();
+      const resultado = new Date(data.getFullYear(), data.getMonth() - meses, 1);
+      const ultimoDia = new Date(resultado.getFullYear(), resultado.getMonth() + 1, 0).getDate();
+      resultado.setDate(Math.min(diaOriginal, ultimoDia));
+      return resultado;
+    }
+
+    function preencherProximaOportunidade() {
+      if (!dataEvento || !proximaOportunidade || !dataEvento.value) return;
+      const partes = dataEvento.value.split("-").map(Number);
+      const data = new Date(partes[0], partes[1] - 1, partes[2]);
+      proximaOportunidade.value = formatarDataInput(subtrairMeses(new Date(partes[0] + 1, partes[1] - 1, partes[2]), 2));
+    }
+
     alternarIndicacao();
     alternarParcelas();
+    alternarValoresOportunidade();
+    preencherProximaOportunidade();
     if (prospeccao) prospeccao.addEventListener("change", alternarIndicacao);
     if (formaPagamento) formaPagamento.addEventListener("change", alternarParcelas);
+    if (etapa) etapa.addEventListener("change", alternarValoresOportunidade);
+    if (dataEvento) dataEvento.addEventListener("change", preencherProximaOportunidade);
     if (nome) nome.addEventListener("change", preencherContato);
   });
 </script>

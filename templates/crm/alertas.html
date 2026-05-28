@@ -111,56 +111,28 @@
     </div>
   </div>
 
-  <div class="panel">
-    <div class="panel-head"><h2>Lembrete anual</h2></div>
-    <div class="list">
-      {% for lembrete in lembretes_anuais %}
-        <div class="list-row alert-card" role="button" tabindex="0">
-          <div>
-            <strong>{{ lembrete.nome }}</strong>
-            <span>Aniversario em {{ lembrete.data_proximo_evento|date:"d/m/Y" }}</span>
-            <small>Alerta desde {{ lembrete.data_alerta|date:"d/m/Y" }} - {{ lembrete.contato }}</small>
-          </div>
-          {% if lembrete.cliente %}
-            <a class="icon-link alert-card-action" href="{% url 'cliente_editar' lembrete.cliente.pk %}" title="Editar cliente"><i data-lucide="pencil"></i></a>
-          {% endif %}
-          <div class="alert-popup-content">
-            <h3>Lembrete anual</h3>
-            <p><strong>Cliente:</strong> {{ lembrete.nome }}</p>
-            <p><strong>Evento original:</strong> {{ lembrete.data_original|date:"d/m/Y" }}</p>
-            <p><strong>Proximo aniversario:</strong> {{ lembrete.data_proximo_evento|date:"d/m/Y" }}</p>
-            <p><strong>Alerta iniciou em:</strong> {{ lembrete.data_alerta|date:"d/m/Y" }}</p>
-            <p><strong>Contato:</strong> {{ lembrete.contato }}</p>
-          </div>
-        </div>
-      {% empty %}
-        <p class="empty">Nenhum lembrete anual ativo.</p>
-      {% endfor %}
-    </div>
-  </div>
-
-  <div class="panel">
+  <div class="panel{% if clientes_recompra %} attention-panel{% endif %}">
     <div class="panel-head"><h2>Fechar nova venda</h2></div>
     <div class="list">
       {% for cliente in clientes_recompra %}
         <div class="list-row alert-card" role="button" tabindex="0">
           <div>
             <strong>{{ cliente.nome }}</strong>
-            <span>Alerta iniciado em {{ cliente.data_alerta_recompra|date:"d/m/Y" }}</span>
-            <small>Proxima oportunidade: {{ cliente.proxima_oportunidade|date:"d/m/Y" }} - {{ cliente.telefone }}</small>
+            <span>Contato para possivel orcamento hoje</span>
+            <small>Data de contato: {{ cliente.proxima_oportunidade|date:"d/m/Y" }} - {{ cliente.telefone }}</small>
           </div>
           <a class="icon-link alert-card-action" href="{% url 'cliente_editar' cliente.pk %}" title="Editar cliente"><i data-lucide="pencil"></i></a>
           <div class="alert-popup-content">
             <h3>Fechar nova venda</h3>
             <p><strong>Cliente:</strong> {{ cliente.nome }}</p>
-            <p><strong>Alerta iniciado em:</strong> {{ cliente.data_alerta_recompra|date:"d/m/Y" }}</p>
-            <p><strong>Proxima oportunidade:</strong> {{ cliente.proxima_oportunidade|date:"d/m/Y" }}</p>
+            <p><strong>Data de contato:</strong> {{ cliente.proxima_oportunidade|date:"d/m/Y" }}</p>
+            <p><strong>Acao:</strong> entrar em contato para possivel orcamento.</p>
             <p><strong>Telefone:</strong> {{ cliente.telefone }}</p>
             <p><strong>Email:</strong> {{ cliente.email }}</p>
           </div>
         </div>
       {% empty %}
-        <p class="empty">Nenhum cliente dentro da janela de 10 meses.</p>
+        <p class="empty">Nenhum contato de oportunidade para hoje.</p>
       {% endfor %}
     </div>
   </div>

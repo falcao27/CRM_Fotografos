@@ -16,9 +16,19 @@ class DateInput(forms.DateInput):
 
 
 class CurrencyField(forms.DecimalField):
+    def prepare_value(self, value):
+        if isinstance(value, Decimal):
+            return f"{value:.2f}".replace(".", ",")
+        return super().prepare_value(value)
+
     def to_python(self, value):
         if isinstance(value, str):
-            value = value.strip().replace(".", "").replace(",", ".")
+            value = value.strip()
+            if "," in value:
+                value = value.replace(".", "").replace(",", ".")
+            elif value.count(".") > 1:
+                partes = value.split(".")
+                value = "".join(partes[:-1]) + "." + partes[-1]
         return super().to_python(value)
 
 
@@ -28,6 +38,12 @@ def add_months(data, meses):
     mes = mes % 12 + 1
     dia = min(data.day, monthrange(ano, mes)[1])
     return data.replace(year=ano, month=mes, day=dia)
+
+
+def calcular_proxima_oportunidade(data_evento):
+    if not data_evento:
+        return None
+    return add_months(add_months(data_evento, 12), -2)
 
 
 class ClienteForm(forms.ModelForm):
@@ -48,6 +64,19 @@ class ClienteForm(forms.ModelForm):
             "proxima_oportunidade": DateInput(),
             "observacoes": forms.Textarea(attrs={"rows": 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["proxima_oportunidade"].widget.attrs["readonly"] = "readonly"
+
+    def save(self, commit=True):
+        cliente = super().save(commit=False)
+        if cliente.data_evento:
+            cliente.proxima_oportunidade = calcular_proxima_oportunidade(cliente.data_evento)
+        if commit:
+            cliente.save()
+            self.save_m2m()
+        return cliente
 
 
 class VendaForm(forms.ModelForm):
@@ -112,6 +141,21 @@ class OportunidadeForm(forms.ModelForm):
         ],
     )
 
+    valor_estimado = CurrencyField(
+        label="Valor do orcamento",
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        widget=forms.TextInput(attrs={"inputmode": "decimal", "placeholder": "0,00"}),
+    )
+    valor_negociado = CurrencyField(
+        label="Valor em negociacao",
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        widget=forms.TextInput(attrs={"inputmode": "decimal", "placeholder": "0,00"}),
+    )
+
     class Meta:
         model = Oportunidade
         fields = [
@@ -120,6 +164,8 @@ class OportunidadeForm(forms.ModelForm):
             "nome_indicacao",
             "tipo_evento",
             "etapa",
+            "valor_estimado",
+            "valor_negociado",
             "data_festa",
             "horario",
             "contato",
@@ -168,6 +214,13 @@ class OportunidadeForm(forms.ModelForm):
         cleaned_data = super().clean()
         if cleaned_data.get("titulo") == "Indicacao" and not cleaned_data.get("nome_indicacao"):
             self.add_error("nome_indicacao", "Informe o nome de quem indicou.")
+        etapa = cleaned_data.get("etapa")
+        valor_estimado = cleaned_data.get("valor_estimado")
+        valor_negociado = cleaned_data.get("valor_negociado")
+        if etapa in ["orcamento", "negociacao"] and not valor_estimado:
+            self.add_error("valor_estimado", "Informe o valor do orcamento.")
+        if etapa == "negociacao" and not valor_negociado:
+            self.add_error("valor_negociado", "Informe o valor em negociacao.")
         return cleaned_data
 
 
@@ -263,6 +316,8 @@ class EventoForm(forms.ModelForm):
         cliente.telefone = evento.contato or cliente.telefone
         cliente.tipo_evento = evento.tipo_evento or cliente.tipo_evento
         cliente.data_evento = evento.data_festa or cliente.data_evento
+        if cliente.data_evento:
+            cliente.proxima_oportunidade = calcular_proxima_oportunidade(cliente.data_evento)
         cliente.observacoes = evento.observacoes or cliente.observacoes
         if commit:
             cliente.save()

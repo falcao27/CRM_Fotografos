@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CRM João Bosco Fotografos</title>
-  <link rel="stylesheet" href="{% static 'crm/styles.css' %}">
+  <link rel="stylesheet" href="{% static 'crm/styles.css' %}?v=20260528-9">
   <script src="https://unpkg.com/lucide@latest" defer></script>
 </head>
 <body>
@@ -28,7 +28,7 @@
       <a href="{% url 'cobrancas' %}"><i data-lucide="badge-dollar-sign"></i>Cobrancas</a>
       <a href="{% url 'clientes' %}"><i data-lucide="contact-round"></i>Clientes</a>
       <a href="{% url 'documentos' %}"><i data-lucide="file-check-2"></i>Documentos</a>
-      <a href="{% url 'alertas' %}"><i data-lucide="bell-ring"></i>Alertas</a>
+      <a class="alert-nav-link" href="{% url 'alertas' %}"><i data-lucide="bell-ring"></i>Alertas</a>
       <a href="/admin/"><i data-lucide="database"></i>Banco/Admin</a>
     </nav>
   </aside>
@@ -55,11 +55,51 @@
     {% block content %}{% endblock %}
   </main>
 
+  <div class="modal-backdrop alert-reminder" id="alertReminder" hidden>
+    <article class="modal-panel alert-reminder-panel" role="dialog" aria-modal="true" aria-labelledby="alertReminderTitle">
+      <button class="modal-close" type="button" id="alertReminderClose" aria-label="Fechar lembrete">
+        <i data-lucide="x"></i>
+      </button>
+      <div class="alert-reminder-icon"><i data-lucide="bell-ring"></i></div>
+      <h3 id="alertReminderTitle">Alertas pendentes</h3>
+      <p>Confira os alertas para nao perder cobrancas, retornos e oportunidades importantes.</p>
+      <button class="button" type="button" id="alertReminderOpen">
+        <i data-lucide="bell-ring"></i>Abrir alertas
+      </button>
+    </article>
+  </div>
+
   <script>
     window.addEventListener("DOMContentLoaded", function () {
       if (window.lucide) window.lucide.createIcons();
       document.getElementById("menuButton").addEventListener("click", function () {
         document.getElementById("sidebar").classList.toggle("open");
+      });
+
+      const alertReminder = document.getElementById("alertReminder");
+      const alertReminderClose = document.getElementById("alertReminderClose");
+      const alertReminderOpen = document.getElementById("alertReminderOpen");
+      const alertsUrl = "{% url 'alertas' %}";
+      let alertReminderTimer = null;
+
+      function showAlertReminder() {
+        if (window.location.pathname === alertsUrl || sessionStorage.getItem("alertReminderStopped") === "true") return;
+        alertReminder.hidden = false;
+        if (window.lucide) window.lucide.createIcons();
+      }
+
+      if (alertReminder && window.location.pathname !== alertsUrl && sessionStorage.getItem("alertReminderStopped") !== "true") {
+        alertReminderTimer = window.setInterval(showAlertReminder, 60000);
+      }
+
+      alertReminderClose.addEventListener("click", function () {
+        alertReminder.hidden = true;
+      });
+
+      alertReminderOpen.addEventListener("click", function () {
+        sessionStorage.setItem("alertReminderStopped", "true");
+        if (alertReminderTimer) window.clearInterval(alertReminderTimer);
+        window.location.href = alertsUrl;
       });
     });
   </script>

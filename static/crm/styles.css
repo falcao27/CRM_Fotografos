@@ -79,6 +79,20 @@ nav a:hover { background: rgba(255,255,255,.08); }
 
 svg { width: 18px; height: 18px; flex: 0 0 auto; }
 
+.alert-nav-link svg {
+  color: #ffd166;
+  transform-origin: 50% 0;
+  animation: bell-ring 1.2s ease-in-out infinite;
+}
+
+@keyframes bell-ring {
+  0%, 45%, 100% { transform: rotate(0); }
+  5%, 15%, 25% { transform: rotate(14deg); }
+  10%, 20%, 30% { transform: rotate(-14deg); }
+  35% { transform: rotate(8deg); }
+  40% { transform: rotate(-8deg); }
+}
+
 .shell {
   width: calc(100% - 270px);
   margin-left: 270px;
@@ -182,6 +196,23 @@ svg { width: 18px; height: 18px; flex: 0 0 auto; }
   transform: translateY(-1px);
 }
 
+.attention-panel {
+  animation: attention-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes attention-pulse {
+  0%, 100% {
+    border-color: var(--line);
+    box-shadow: var(--shadow);
+    transform: translateY(0);
+  }
+  50% {
+    border-color: #f5c451;
+    box-shadow: 0 0 0 3px rgba(245, 196, 81, .22), 0 12px 35px rgba(31, 43, 39, .12);
+    transform: translateY(-2px);
+  }
+}
+
 .alert-popup-content {
   display: none;
 }
@@ -218,6 +249,33 @@ svg { width: 18px; height: 18px; flex: 0 0 auto; }
 .modal-panel p {
   margin: 9px 0;
   line-height: 1.4;
+}
+
+.alert-reminder-panel {
+  text-align: center;
+}
+
+.alert-reminder-icon {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 12px;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff4cc;
+  color: #9a6700;
+}
+
+.alert-reminder-icon svg {
+  width: 30px;
+  height: 30px;
+  transform-origin: 50% 0;
+  animation: bell-ring 1.2s ease-in-out infinite;
+}
+
+.alert-reminder-panel .button {
+  width: 100%;
+  margin-top: 12px;
 }
 
 .modal-close {
@@ -289,6 +347,82 @@ h2 {
 .list {
   display: grid;
   gap: 10px;
+}
+
+.report-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  gap: 20px;
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+.report-period {
+  margin-bottom: 16px;
+}
+
+.report-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-content: space-between;
+  gap: 10px 16px;
+  min-height: 180px;
+  padding: 28px;
+  color: var(--text);
+  text-align: left;
+}
+
+.report-card span {
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.report-card small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.report-card strong {
+  grid-row: 1;
+  grid-column: 2;
+  color: var(--accent-dark);
+  font-size: 48px;
+  line-height: 1;
+}
+
+.report-trigger {
+  cursor: pointer;
+}
+
+.report-trigger:hover,
+.report-trigger:focus {
+  border-color: #b9ded2;
+  box-shadow: 0 8px 22px rgba(31, 43, 39, .08);
+  outline: none;
+}
+
+.report-popups {
+  margin-bottom: 16px;
+}
+
+.report-popup {
+  position: relative;
+}
+
+.report-popup[hidden] {
+  display: none;
+}
+
+.report-popup h3 {
+  margin: 0 48px 16px 0;
+  font-size: 20px;
+}
+
+.report-close {
+  top: 18px;
+  right: 18px;
 }
 
 .list-row {
@@ -478,6 +612,83 @@ input[type="checkbox"] {
   gap: 12px;
 }
 
+.finance-groups {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  gap: 20px;
+  align-items: start;
+  margin-bottom: 20px;
+}
+
+.finance-group-trigger {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-content: space-between;
+  gap: 10px 16px;
+  min-height: 180px;
+  padding: 28px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.finance-group-trigger span {
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.finance-group-trigger small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.finance-group-trigger strong {
+  grid-row: 1;
+  grid-column: 2;
+  color: var(--accent-dark);
+  font-size: 48px;
+  line-height: 1;
+}
+
+.finance-group-trigger:hover,
+.finance-group-trigger:focus {
+  border-color: #b9ded2;
+  box-shadow: 0 8px 22px rgba(31, 43, 39, .08);
+  outline: none;
+}
+
+.finance-group-popups {
+  margin-bottom: 16px;
+}
+
+.finance-group-panel {
+  position: relative;
+}
+
+.finance-group-panel[hidden] {
+  display: none;
+}
+
+.finance-group-panel h2 {
+  margin: 0 48px 16px 0;
+}
+
+.finance-group-search {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.finance-client-grid {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.finance-group-close {
+  top: 18px;
+  right: 18px;
+}
+
 .client-card {
   min-height: 72px;
   padding: 14px 16px;
@@ -601,6 +812,11 @@ label em {
   margin-top: 5px;
   color: var(--danger);
   font-style: normal;
+}
+
+input[readonly] {
+  background: #f3f6f5;
+  color: var(--muted);
 }
 
 .form-panel .row-actions {
@@ -910,6 +1126,11 @@ label em {
   overflow: hidden;
 }
 
+.payment-client.has-overdue {
+  border-color: #ffd0ca;
+  background: #fff4f2;
+}
+
 .payment-client summary {
   display: flex;
   align-items: center;
@@ -929,6 +1150,14 @@ label em {
   font-weight: 800;
 }
 
+.payment-summary-values {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .payment-details {
   display: grid;
   gap: 8px;
@@ -945,9 +1174,18 @@ label em {
   background: #fff;
 }
 
+.payment-detail-row.overdue {
+  border: 1px solid #ffd0ca;
+  background: #fff4f2;
+}
+
 .payment-detail-row small {
   display: block;
   margin-top: 4px;
+}
+
+.payment-detail-row .badge {
+  margin-top: 6px;
 }
 
 .progress-wrap {
@@ -982,11 +1220,18 @@ label em {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f9faf9;
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 
 .kanban-col.kanban-summary {
   min-height: 54px;
   background: var(--surface);
+}
+
+.kanban-col.drag-over {
+  border-color: var(--accent);
+  background: #eefcf7;
+  box-shadow: inset 0 0 0 2px rgba(16, 124, 96, .16);
 }
 
 .kanban-col header {
@@ -1013,6 +1258,18 @@ label em {
   border-radius: 8px;
   background: var(--surface);
   box-shadow: 0 8px 20px rgba(31, 43, 39, .06);
+  cursor: grab;
+  transition: opacity .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+
+.kanban-card:active {
+  cursor: grabbing;
+}
+
+.kanban-card.dragging {
+  opacity: .55;
+  transform: scale(.98);
+  box-shadow: 0 12px 28px rgba(31, 43, 39, .12);
 }
 
 .kanban-card .avatar {
@@ -1081,8 +1338,10 @@ label em {
   .finance-summary,
   .pipeline-report,
   .metric-grid,
+  .report-card-grid,
   .dashboard-grid,
-  .agenda-grid {
+  .agenda-grid,
+  .finance-groups {
     grid-template-columns: 1fr;
   }
 

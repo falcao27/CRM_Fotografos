@@ -48,7 +48,7 @@
 
 <section class="kanban">
   {% for etapa in etapas %}
-    <article class="kanban-col{% if not etapa.mostrar_cards %} kanban-summary{% endif %}">
+    <article class="kanban-col{% if not etapa.mostrar_cards %} kanban-summary{% endif %}" data-etapa="{{ etapa.codigo }}">
       <header>
         <h2>
           {{ etapa.nome }}
@@ -59,7 +59,16 @@
       {% if etapa.mostrar_cards %}
         <div class="kanban-cards">
           {% for oportunidade in etapa.items %}
-            <div class="kanban-card">
+            <div
+              class="kanban-card"
+              draggable="true"
+              data-etapa-atual="{{ etapa.codigo }}"
+              data-mover-novo="{% url 'oportunidade_mover' oportunidade.pk 'novo' %}"
+              data-mover-orcamento="{% url 'oportunidade_mover' oportunidade.pk 'orcamento' %}"
+              data-mover-negociacao="{% url 'oportunidade_mover' oportunidade.pk 'negociacao' %}"
+              data-mover-fechado="{% url 'oportunidade_mover' oportunidade.pk 'fechado' %}"
+              data-mover-perdido="{% url 'oportunidade_mover' oportunidade.pk 'perdido' %}"
+            >
               <div class="avatar">{{ oportunidade.nome_lead|slice:":2"|upper }}</div>
               <strong>{{ oportunidade.nome_lead }}</strong>
               <small>
@@ -70,7 +79,7 @@
                 {% endif %}
                 {% if oportunidade.tipo_evento %} - {{ oportunidade.tipo_evento }}{% endif %}
               </small>
-              <b>{{ oportunidade.valor_estimado|brl }}</b>
+              <b>{{ oportunidade.valor_em_vigor|brl }}</b>
               <div class="kanban-actions">
                 <a href="{% url 'oportunidade_editar' oportunidade.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
                 {% if etapa.codigo != "novo" %}<a href="{% url 'oportunidade_mover' oportunidade.pk 'novo' %}" title="Novo lead"><i data-lucide="circle-dot"></i></a>{% endif %}
@@ -88,4 +97,56 @@
     </article>
   {% endfor %}
 </section>
+
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    var draggedCard = null;
+
+    document.querySelectorAll(".kanban-card").forEach(function (card) {
+      card.addEventListener("dragstart", function (event) {
+        if (event.target.closest(".kanban-actions")) {
+          event.preventDefault();
+          return;
+        }
+
+        draggedCard = card;
+        card.classList.add("dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", card.dataset.etapaAtual || "");
+      });
+
+      card.addEventListener("dragend", function () {
+        card.classList.remove("dragging");
+        document.querySelectorAll(".kanban-col.drag-over").forEach(function (column) {
+          column.classList.remove("drag-over");
+        });
+        draggedCard = null;
+      });
+    });
+
+    document.querySelectorAll(".kanban-col").forEach(function (column) {
+      column.addEventListener("dragover", function (event) {
+        if (!draggedCard) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        column.classList.add("drag-over");
+      });
+
+      column.addEventListener("dragleave", function (event) {
+        if (!column.contains(event.relatedTarget)) {
+          column.classList.remove("drag-over");
+        }
+      });
+
+      column.addEventListener("drop", function (event) {
+        event.preventDefault();
+        column.classList.remove("drag-over");
+        if (!draggedCard || draggedCard.dataset.etapaAtual === column.dataset.etapa) return;
+
+        var url = draggedCard.dataset["mover" + column.dataset.etapa.charAt(0).toUpperCase() + column.dataset.etapa.slice(1)];
+        if (url) window.location.href = url;
+      });
+    });
+  });
+</script>
 {% endblock %}

@@ -10,7 +10,7 @@ from xml.etree import ElementTree as ET
 
 from django.contrib import messages
 from django.http import HttpResponse
-from django.db.models import Count, Q, Sum
+from django.db.models import Case, Count, DecimalField, F, Q, Sum, When
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -355,21 +355,69 @@ def cliente_excluir(request, pk):
 
 
 def financeiro(request):
-    status = request.GET.get("status", "")
     hoje = timezone.localdate()
-    clientes = Cliente.objects.filter(vendas__isnull=False).distinct().order_by("nome")
-    if status == "vencido":
-        clientes = clientes.filter(vendas__parcelas__status__in=["pendente", "atrasado"], vendas__parcelas__vencimento__lt=hoje)
-    elif status:
-        clientes = clientes.filter(vendas__status=status).distinct()
-    clientes = clientes.annotate(
-        total_vendas=Count("vendas", filter=Q(vendas__status=status)) if status and status != "vencido" else Count("vendas"),
-        parcelas_vencidas=Count(
-            "vendas__parcelas",
-            filter=Q(vendas__parcelas__status__in=["pendente", "atrasado"], vendas__parcelas__vencimento__lt=hoje),
-        ),
+    vendas = (
+        Venda.objects.select_related("cliente", "evento")
+        .prefetch_related("parcelas")
+        .filter(evento__isnull=False)
+        .exclude(status="cancelado")
+        .order_by("cliente__nome", "-data_venda", "-id")
     )
-    return render(request, "crm/financeiro.html", {"clientes": clientes, "status": status})
+
+    grupos = {
+        "pagos": {
+            "titulo": "Evento Pago",
+            "descricao": "Eventos que ja estao marcados como pago.",
+            "status_painel": "pago",
+            "clientes": {},
+        },
+        "atrasados": {
+            "titulo": "Clientes Em atraso",
+            "descricao": "A vista vencido ou boleto parcelado com pagamento em atraso.",
+            "status_painel": "vencido",
+            "clientes": {},
+        },
+        "em_dia": {
+            "titulo": "Clientes em dias",
+            "descricao": "Boleto parcelado com pagamentos dentro do prazo.",
+            "status_painel": "pendente",
+            "clientes": {},
+        },
+    }
+
+    for venda in vendas:
+        parcelas = list(venda.parcelas.all())
+        parcelas_vencidas = [
+            parcela
+            for parcela in parcelas
+            if parcela.status in ["pendente", "atrasado"] and parcela.vencimento < hoje
+        ]
+        boleto_parcelado = venda.forma_pagamento == "boleto" and venda.condicao_pagamento == "parcelado"
+
+        if venda.evento.pagamento_status == "pago":
+            chave = "pagos"
+        elif venda.evento.pagamento_status == "vencido":
+            chave = "atrasados"
+        elif boleto_parcelado:
+            chave = "em_dia"
+        else:
+            continue
+
+        grupos[chave]["clientes"].setdefault(
+            venda.cliente_id,
+            {
+                "cliente": venda.cliente,
+                "parcelas_vencidas": 0,
+            },
+        )
+        grupos[chave]["clientes"][venda.cliente_id]["parcelas_vencidas"] += len(parcelas_vencidas)
+
+    grupos_financeiros = []
+    for grupo in grupos.values():
+        clientes = sorted(grupo["clientes"].values(), key=lambda item: item["cliente"].nome.lower())
+        grupos_financeiros.append({**grupo, "clientes": clientes, "total": len(clientes)})
+
+    return render(request, "crm/financeiro.html", {"grupos_financeiros": grupos_financeiros})
 
 
 def financeiro_cliente_painel(request, cliente_id):
@@ -499,15 +547,18 @@ def pipeline(request):
         oportunidades = oportunidades.filter(Q(nome_lead__icontains=busca) | Q(cliente__nome__icontains=busca))
 
     oportunidades_30_dias = oportunidades.filter(criado_em__date__gte=inicio_relatorio)
+    valor_em_vigor = Case(
+        When(etapa__in=["negociacao", "fechado"], valor_negociado__isnull=False, then=F("valor_negociado")),
+        default=F("valor_estimado"),
+        output_field=DecimalField(max_digits=10, decimal_places=2),
+    )
     resumo_30_dias = {
         "total": oportunidades_30_dias.count(),
         "novos": oportunidades_30_dias.filter(etapa="novo").count(),
         "em_andamento": oportunidades_30_dias.filter(etapa__in=["orcamento", "negociacao"]).count(),
         "fechados": oportunidades_30_dias.filter(etapa="fechado").count(),
         "perdidos": oportunidades_30_dias.filter(etapa="perdido").count(),
-        "valor_aberto": oportunidades_30_dias.filter(etapa__in=etapas_visiveis).aggregate(total=Sum("valor_estimado"))[
-            "total"
-        ]
+        "valor_aberto": oportunidades_30_dias.filter(etapa__in=etapas_visiveis).aggregate(total=Sum(valor_em_vigor))["total"]
         or 0,
     }
 
@@ -570,8 +621,8 @@ def preparar_evento_da_oportunidade(oportunidade):
     evento.data_festa = oportunidade.data_festa
     evento.horario = oportunidade.horario
     evento.contato = oportunidade.contato
-    if oportunidade.valor_estimado and not evento.valor_cobrado:
-        evento.valor_cobrado = oportunidade.valor_estimado
+    if oportunidade.valor_em_vigor:
+        evento.valor_cobrado = oportunidade.valor_em_vigor
     evento.observacoes = oportunidade.observacoes
     evento.save()
 
@@ -611,6 +662,8 @@ def oportunidade_mover(request, pk, etapa):
             messages.success(request, "Oportunidade perdida arquivada para contato futuro.")
             return redirect("pipeline")
         oportunidade.save(update_fields=["etapa", "atualizado_em"])
+        if etapa in ["orcamento", "negociacao"]:
+            return redirect("oportunidade_editar", pk=oportunidade.pk)
     return redirect("pipeline")
 
 
@@ -639,10 +692,12 @@ def cobrancas(request):
         cliente = parcela.venda.cliente
         item = pagamentos_por_cliente.setdefault(
             cliente.pk,
-            {"cliente": cliente, "parcelas": [], "total": Decimal("0.00")},
+            {"cliente": cliente, "parcelas": [], "total": Decimal("0.00"), "vencidas": 0},
         )
         item["parcelas"].append(parcela)
         item["total"] += parcela.valor
+        if parcela.status_financeiro == "vencido":
+            item["vencidas"] += 1
     return render(
         request,
         "crm/cobrancas.html",
@@ -692,16 +747,17 @@ def relatorios(request):
         data_venda__range=(inicio_mes, fim_mes)
     )
     despesas_mes = Despesa.objects.filter(Q(data__range=(inicio_mes, fim_mes)) | Q(vencimento__range=(inicio_mes, fim_mes)))
-    eventos_mes = Evento.objects.filter(data_festa__range=(inicio_mes, fim_mes))
+    eventos_mes = Evento.objects.filter(
+        Q(criado_em__date__range=(inicio_mes, fim_mes)) | Q(atualizado_em__date__range=(inicio_mes, fim_mes))
+    ).distinct()
     contexto = {
         "inicio_mes": inicio_mes,
         "fim_mes": fim_mes,
         "receita_mes": vendas_mes.aggregate(total=Sum("valor_total"))["total"] or 0,
         "despesa_mes": despesas_mes.aggregate(total=Sum("valor"))["total"] or 0,
         "eventos_mes": eventos_mes.count(),
-        "oportunidades_abertas": Oportunidade.objects.exclude(etapa__in=["fechado", "perdido"]).count(),
         "vendas_recentes": vendas_mes.select_related("cliente")[:8],
-        "eventos_recentes": eventos_mes.select_related("cliente", "venda")[:8],
+        "eventos_recentes": eventos_mes.select_related("cliente", "venda").order_by("-atualizado_em")[:8],
     }
     return render(request, "crm/relatorios.html", contexto)
 

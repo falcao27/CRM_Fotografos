@@ -5,16 +5,47 @@
 {% block page_subtitle %}Acompanhe os principais numeros do CRM.{% endblock %}
 
 {% block content %}
-<section class="metric-grid">
-  <article class="metric"><i data-lucide="banknote"></i><span>Receita do Mes</span><strong>{{ receita_mes|brl }}</strong></article>
-  <article class="metric"><i data-lucide="receipt-text"></i><span>Despesas do Mes</span><strong>{{ despesa_mes|brl }}</strong></article>
-  <article class="metric"><i data-lucide="party-popper"></i><span>Eventos no Mes</span><strong>{{ eventos_mes }}</strong></article>
-  <article class="metric"><i data-lucide="target"></i><span>Oportunidades Abertas</span><strong>{{ oportunidades_abertas }}</strong></article>
+<section class="month-line report-period">
+  <i data-lucide="calendar"></i>
+  <strong>Periodo</strong>
+  <span>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</span>
 </section>
 
-<section class="split">
-  <article class="panel">
-    <div class="panel-head"><h2>Vendas recentes</h2></div>
+<section class="report-card-grid">
+  <article class="panel report-card">
+    <span>Receita do Mes</span>
+    <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
+    <strong>{{ receita_mes|brl }}</strong>
+  </article>
+  <article class="panel report-card">
+    <span>Despesas do Mes</span>
+    <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
+    <strong>{{ despesa_mes|brl }}</strong>
+  </article>
+  <article class="panel report-card">
+    <span>Eventos no Mes</span>
+    <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
+    <strong>{{ eventos_mes }}</strong>
+  </article>
+</section>
+
+<section class="report-card-grid">
+  <button class="panel report-card report-trigger" type="button" data-report-target="vendasRecentesPainel">
+    <span>Vendas recentes</span>
+    <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
+    <strong>{{ vendas_recentes|length }}</strong>
+  </button>
+  <button class="panel report-card report-trigger" type="button" data-report-target="eventosRecentesPainel">
+    <span>Eventos recentes</span>
+    <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
+    <strong>{{ eventos_recentes|length }}</strong>
+  </button>
+</section>
+
+<section class="report-popups">
+  <article class="panel report-popup" id="vendasRecentesPainel" hidden>
+    <button class="modal-close report-close" type="button" data-report-close aria-label="Fechar"><i data-lucide="x"></i></button>
+    <h3 id="vendasRecentesTitulo">Vendas recentes</h3>
     <div class="list">
       {% for venda in vendas_recentes %}
         <div class="list-row">
@@ -30,8 +61,9 @@
     </div>
   </article>
 
-  <article class="panel">
-    <div class="panel-head"><h2>Eventos recentes</h2></div>
+  <article class="panel report-popup" id="eventosRecentesPainel" hidden>
+    <button class="modal-close report-close" type="button" data-report-close aria-label="Fechar"><i data-lucide="x"></i></button>
+    <h3 id="eventosRecentesTitulo">Eventos recentes</h3>
     <div class="list">
       {% for evento in eventos_recentes %}
         <div class="list-row">
@@ -47,4 +79,30 @@
     </div>
   </article>
 </section>
+
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll("[data-report-target]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var panel = document.getElementById(button.dataset.reportTarget);
+        document.querySelectorAll(".report-popup").forEach(function (item) {
+          item.hidden = item !== panel || !item.hidden;
+        });
+      });
+    });
+
+    document.querySelectorAll("[data-report-close]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        button.closest(".report-popup").hidden = true;
+      });
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape") return;
+      document.querySelectorAll(".report-popup:not([hidden])").forEach(function (panel) {
+        panel.hidden = true;
+      });
+    });
+  });
+</script>
 {% endblock %}

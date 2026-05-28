@@ -30,14 +30,11 @@ class Cliente(models.Model):
 
     @property
     def data_alerta_recompra(self):
-        if not self.proxima_oportunidade:
-            return None
-        return self.proxima_oportunidade - timedelta(days=300)
+        return self.proxima_oportunidade
 
     @property
     def precisa_alerta_recompra(self):
-        alerta = self.data_alerta_recompra
-        return bool(alerta and alerta <= timezone.localdate() <= self.proxima_oportunidade)
+        return bool(self.proxima_oportunidade and self.proxima_oportunidade <= timezone.localdate())
 
 
 class Venda(models.Model):
@@ -179,6 +176,7 @@ class Oportunidade(models.Model):
     nome_indicacao = models.CharField(max_length=160, blank=True)
     tipo_evento = models.CharField(max_length=100, blank=True)
     valor_estimado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    valor_negociado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     etapa = models.CharField(max_length=20, choices=ETAPA_CHOICES, default="novo")
     prioridade = models.CharField(max_length=20, choices=PRIORIDADE_CHOICES, default="media")
     origem = models.CharField(max_length=90, blank=True)
@@ -195,6 +193,12 @@ class Oportunidade(models.Model):
 
     def __str__(self):
         return f"{self.nome_lead} - {self.titulo}"
+
+    @property
+    def valor_em_vigor(self):
+        if self.etapa in ["negociacao", "fechado"] and self.valor_negociado is not None:
+            return self.valor_negociado
+        return self.valor_estimado
 
 
 class OportunidadePerdida(models.Model):
@@ -272,6 +276,25 @@ class Evento(models.Model):
 
     def __str__(self):
         return f"{self.nome} - {self.get_tipo_evento_display() if self.tipo_evento else 'Evento'}"
+
+    @property
+    def pagamento_status(self):
+        if self.pagamento_recebido or (self.venda_id and self.venda.status == "pago"):
+            return "pago"
+        if self.venda_id:
+            for parcela in self.venda.parcelas.all():
+                if parcela.status in ["pendente", "atrasado"] and parcela.vencimento < timezone.localdate():
+                    return "vencido"
+        return "pendente"
+
+    @property
+    def pagamento_status_label(self):
+        labels = {
+            "pago": "Pago",
+            "vencido": "Vencido",
+            "pendente": "A receber",
+        }
+        return labels[self.pagamento_status]
 
 
 class LembreteAnual(models.Model):

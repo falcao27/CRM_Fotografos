@@ -5,35 +5,50 @@
 
 {% block content %}
 <section class="toolbar">
-  <form class="search" method="get">
-    <select name="status">
-      <option value="">Todos os status</option>
-      <option value="pendente" {% if status == "pendente" %}selected{% endif %}>Pendente</option>
-      <option value="vencido" {% if status == "vencido" %}selected{% endif %}>Vencido</option>
-      <option value="pago" {% if status == "pago" %}selected{% endif %}>Pago</option>
-      <option value="atrasado" {% if status == "atrasado" %}selected{% endif %}>Atrasado</option>
-      <option value="cancelado" {% if status == "cancelado" %}selected{% endif %}>Cancelado</option>
-    </select>
-    <button class="button ghost" type="submit"><i data-lucide="filter"></i>Filtrar</button>
-  </form>
   <a class="button" href="{% url 'venda_nova' %}"><i data-lucide="plus"></i>Nova venda</a>
 </section>
 
-<section class="client-card-grid">
-  {% for cliente in clientes %}
-    <button
-      class="client-card"
-      type="button"
-      data-panel-url="{% url 'financeiro_cliente_painel' cliente.pk %}?status={{ status }}"
-      aria-label="Abrir financeiro de {{ cliente.nome }}"
-    >
-      <span>{{ cliente.nome }}</span>
-      {% if cliente.parcelas_vencidas %}
-        <small class="card-alert"><i data-lucide="triangle-alert"></i>{{ cliente.parcelas_vencidas }} pagamento(s) vencido(s)</small>
-      {% endif %}
+<section class="finance-groups">
+  {% for grupo in grupos_financeiros %}
+    <button class="panel finance-group-trigger" type="button" data-finance-target="financeGrupo{{ forloop.counter }}">
+      <span>{{ grupo.titulo }}</span>
+      <small>{{ grupo.descricao }}</small>
+      <strong>{{ grupo.total }}</strong>
     </button>
   {% empty %}
     <section class="panel"><p class="empty">Nenhuma venda cadastrada.</p></section>
+  {% endfor %}
+</section>
+
+<section class="finance-group-popups">
+  {% for grupo in grupos_financeiros %}
+    <article class="panel finance-group-panel" id="financeGrupo{{ forloop.counter }}" hidden>
+      <button class="modal-close finance-group-close" type="button" data-finance-close aria-label="Fechar"><i data-lucide="x"></i></button>
+      <h2>{{ grupo.titulo }}</h2>
+      <label class="finance-group-search">
+        <span>Buscar cliente</span>
+        <input type="search" placeholder="Digite o nome do cliente" data-finance-search>
+      </label>
+      <div class="client-card-grid finance-client-grid">
+        {% for item in grupo.clientes %}
+          <button
+            class="client-card"
+            type="button"
+            data-panel-url="{% url 'financeiro_cliente_painel' item.cliente.pk %}?status={{ grupo.status_painel }}"
+            data-client-name="{{ item.cliente.nome|lower }}"
+            aria-label="Abrir financeiro de {{ item.cliente.nome }}"
+          >
+            <span>{{ item.cliente.nome }}</span>
+            {% if item.parcelas_vencidas %}
+              <small class="card-alert"><i data-lucide="triangle-alert"></i>{{ item.parcelas_vencidas }} pagamento(s) vencido(s)</small>
+            {% endif %}
+          </button>
+        {% empty %}
+          <p class="empty">Nenhum cliente neste grupo.</p>
+        {% endfor %}
+        <p class="empty finance-search-empty" hidden>Nenhum cliente encontrado.</p>
+      </div>
+    </article>
   {% endfor %}
 </section>
 
@@ -79,12 +94,51 @@
       });
     });
 
+    document.querySelectorAll("[data-finance-target]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        const panel = document.getElementById(button.dataset.financeTarget);
+        document.querySelectorAll(".finance-group-panel").forEach(function (item) {
+          item.hidden = item !== panel || !item.hidden;
+        });
+        refreshIcons();
+      });
+    });
+
+    document.querySelectorAll("[data-finance-close]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        button.closest(".finance-group-panel").hidden = true;
+      });
+    });
+
+    document.querySelectorAll("[data-finance-search]").forEach(function (input) {
+      input.addEventListener("input", function () {
+        const panel = input.closest(".finance-group-panel");
+        const query = input.value.trim().toLowerCase();
+        const cards = panel.querySelectorAll(".client-card");
+        const empty = panel.querySelector(".finance-search-empty");
+        let visibleCount = 0;
+
+        cards.forEach(function (card) {
+          const matches = card.dataset.clientName.includes(query);
+          card.hidden = !matches;
+          if (matches) visibleCount += 1;
+        });
+
+        if (empty) empty.hidden = visibleCount > 0;
+      });
+    });
+
     backdrop.addEventListener("click", closeDrawer);
     drawer.addEventListener("click", function (event) {
       if (event.target.closest("[data-close-drawer]")) closeDrawer();
     });
     document.addEventListener("keydown", function (event) {
       if (event.key === "Escape") closeDrawer();
+      if (event.key === "Escape") {
+        document.querySelectorAll(".finance-group-panel:not([hidden])").forEach(function (panel) {
+          panel.hidden = true;
+        });
+      }
     });
   });
 </script>

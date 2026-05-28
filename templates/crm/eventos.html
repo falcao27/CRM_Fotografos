@@ -23,7 +23,7 @@
           <th>Data</th>
           <th>Valor</th>
           <th>Pagamento</th>
-          <th>Status</th>
+          <th>Pagamento</th>
           <th>Contato</th>
           <th>Observacao</th>
           <th>Acoes</th>
@@ -40,7 +40,7 @@
             </td>
             <td>{{ evento.valor_cobrado|brl }}</td>
             <td>{{ evento.get_forma_pagamento_display }}{% if evento.quantidade_parcelas > 1 %}<br><small>{{ evento.quantidade_parcelas }}x</small>{% endif %}</td>
-            <td>{% if evento.pagamento_recebido %}<span class="badge pago">Pago</span>{% else %}<span class="badge pendente">A receber</span>{% endif %}</td>
+            <td><span class="badge {{ evento.pagamento_status }}">{{ evento.pagamento_status_label }}</span></td>
             <td>{{ evento.contato|default:"-" }}</td>
             <td>{{ evento.observacoes|truncatechars:70|default:"-" }}</td>
             <td class="actions">

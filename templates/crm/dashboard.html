@@ -123,7 +123,7 @@
         <div class="list-row">
           <div>
             <strong>{{ cliente.nome }}</strong>
-            <span>Contato a partir de {{ cliente.data_alerta_recompra|date:"d/m/Y" }} para vender antes de {{ cliente.proxima_oportunidade|date:"d/m/Y" }}</span>
+            <span>Contato em {{ cliente.proxima_oportunidade|date:"d/m/Y" }} para possivel orcamento</span>
           </div>
           <b>{{ cliente.telefone }}</b>
         </div>
