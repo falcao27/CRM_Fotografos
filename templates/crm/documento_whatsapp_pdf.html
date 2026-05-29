@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 
-{% block page_title %}Enviar PDF pelo WhatsApp{% endblock %}
-{% block page_subtitle %}O WhatsApp Web exige que o arquivo seja anexado manualmente pelo navegador.{% endblock %}
+{% block page_title %}Enviar contrato pelo WhatsApp{% endblock %}
+{% block page_subtitle %}Use como aviso rapido depois que o contrato for enviado por e-mail.{% endblock %}
 
 {% block content %}
 <section class="form-panel narrow">
   <h2>{{ documento.titulo }}</h2>
   <p class="empty">
-    Baixe o PDF editavel e abra a conversa do cliente. No WhatsApp Web, clique no clipe/anexo e selecione o PDF baixado.
+    Abra a conversa do cliente e envie a mensagem pronta informando que o contrato foi enviado por e-mail com o link do Assinador gov.br.
   </p>
   <div class="row-actions">
-    <a class="button" href="{% url 'documento_pdf' documento.pk %}?download=1"><i data-lucide="download"></i>Baixar PDF</a>
-    <a class="button ghost" href="{{ whatsapp_url }}" target="_blank" rel="noopener"><i data-lucide="message-circle"></i>Abrir WhatsApp</a>
+    <a class="button" href="{{ whatsapp_url }}" target="_blank" rel="noopener"><i data-lucide="message-circle"></i>Abrir WhatsApp</a>
+    <a class="button ghost" href="{% url 'documento_pdf' documento.pk %}?download=1"><i data-lucide="download"></i>Baixar PDF</a>
     <a class="button ghost" href="{% url 'documentos' %}">Voltar</a>
   </div>
 </section>

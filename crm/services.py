@@ -1,5 +1,4 @@
 import json
-import os
 import re
 import uuid
 from urllib.parse import quote
@@ -14,6 +13,9 @@ from .pdf import gerar_pdf_documento, nome_pdf_documento
 
 class EnvioDocumentoError(Exception):
     pass
+
+
+GOVBR_ASSINADOR_URL = "https://www.gov.br/pt-br/servicos/assinatura-eletronica"
 
 
 def normalizar_whatsapp(numero):
@@ -33,9 +35,13 @@ def enviar_documento_email(documento):
 
     mensagem = (
         f"Ola, {documento.cliente.nome if documento.cliente else ''}.\n\n"
-        "Segue o contrato para conferencia e assinatura virtual.\n\n"
-        f"{documento.contrato_renderizado()}\n\n"
-        "Apos assinar, responda este e-mail ou envie o documento assinado ao fotografo."
+        "Segue o contrato em PDF para conferencia.\n\n"
+        "Para assinar digitalmente pelo gov.br:\n"
+        f"1. Acesse {GOVBR_ASSINADOR_URL}\n"
+        "2. Entre com sua conta gov.br prata ou ouro.\n"
+        "3. Envie o PDF anexado, assine e baixe o arquivo assinado.\n"
+        "4. Responda este e-mail com o PDF assinado para anexarmos ao cadastro do evento.\n\n"
+        "Obrigado."
     )
     email = EmailMessage(
         subject=documento.titulo,
@@ -74,7 +80,7 @@ def enviar_documento_whatsapp(documento):
             "filename": nome_pdf_documento(documento),
             "caption": (
                 f"Ola, {documento.cliente.nome if documento.cliente else ''}. "
-                "Segue o contrato em PDF para conferencia e assinatura virtual."
+                "Segue o contrato em PDF. Assine pelo gov.br e envie o PDF assinado de volta."
             ),
         },
     }
@@ -99,6 +105,13 @@ def enviar_documento_whatsapp(documento):
         raise EnvioDocumentoError(f"Falha de conexao com WhatsApp: {exc.reason}") from exc
 
     return f"WhatsApp enviado com sucesso. Retorno: {body}"
+
+
+def whatsapp_api_configurado():
+    return bool(
+        getattr(settings, "WHATSAPP_ACCESS_TOKEN", "")
+        and getattr(settings, "WHATSAPP_PHONE_NUMBER_ID", "")
+    )
 
 
 def enviar_pdf_para_whatsapp(documento, token, phone_number_id, api_version):
@@ -153,18 +166,32 @@ def enviar_pdf_para_whatsapp(documento, token, phone_number_id, api_version):
 
 def enviar_documento(documento):
     resultados = []
-    if documento.forma_envio in ["whatsapp", "ambos"]:
-        resultados.append(enviar_documento_whatsapp(documento))
-    if documento.forma_envio in ["email", "ambos"]:
+    deve_enviar_email = documento.forma_envio in ["email", "ambos"]
+    whatsapp_sem_api = documento.forma_envio in ["whatsapp", "ambos"] and not whatsapp_api_configurado()
+    if documento.forma_envio == "whatsapp" and whatsapp_sem_api and documento.contato_email:
+        deve_enviar_email = True
+
+    if deve_enviar_email:
         resultados.append(enviar_documento_email(documento))
+    if whatsapp_sem_api:
+        if not documento.contato_email:
+            raise EnvioDocumentoError(
+                "WhatsApp automatico nao configurado e o documento esta sem e-mail do cliente. "
+                "Edite o documento ou o cliente e informe o e-mail para enviar o PDF."
+            )
+        resultados.append("Aviso de WhatsApp pendente: use o botao de WhatsApp manual para abrir a mensagem pronta.")
+    elif documento.forma_envio in ["whatsapp", "ambos"]:
+        resultados.append(enviar_documento_whatsapp(documento))
     return "\n".join(resultados)
 
 
 def mensagem_documento_whatsapp(documento):
     return (
         f"Ola, {documento.cliente.nome if documento.cliente else ''}.\n\n"
-        "Segue o contrato em PDF para conferencia e assinatura virtual.\n"
-        "Apos assinar, envie o documento assinado por aqui ou responda confirmando a assinatura."
+        "Te enviei o contrato no e-mail com o PDF anexado.\n\n"
+        "Para assinar digitalmente, acesse o Assinador gov.br:\n"
+        f"{GOVBR_ASSINADOR_URL}\n\n"
+        "Depois de assinar, responda o e-mail ou me envie o PDF assinado por aqui."
     )
 
 

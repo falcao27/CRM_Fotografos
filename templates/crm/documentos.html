@@ -19,16 +19,25 @@
 <section class="panel">
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Documento</th><th>Cliente</th><th>Envio virtual</th><th>Limite</th><th>Status</th><th>Acoes</th></tr></thead>
+      <thead><tr><th>Documento</th><th>Cliente / Evento</th><th>Assinatura gov.br</th><th>Limite</th><th>Status</th><th>Acoes</th></tr></thead>
       <tbody>
         {% for documento in documentos %}
           <tr>
             <td><strong>{{ documento.titulo }}</strong><br><small>{{ documento.observacoes }}</small></td>
             <td>
               {% if documento.cliente %}{{ documento.cliente.nome }}{% else %}Sem cliente{% endif %}
+              {% if documento.evento %}<br><small>Evento: {{ documento.evento.nome }}</small>{% endif %}
               <br><small>{{ documento.contato_whatsapp }}{% if documento.contato_email %} - {{ documento.contato_email }}{% endif %}</small>
             </td>
-            <td>{{ documento.get_forma_envio_display }}<br><small>Enviado: {{ documento.enviado_em|date:"d/m/Y"|default:"Nao enviado" }}</small></td>
+            <td>
+              {{ documento.get_forma_envio_display }}<br>
+              <small>Enviado: {{ documento.enviado_em|date:"d/m/Y"|default:"Nao enviado" }}</small>
+              {% if documento.arquivo_assinado %}
+                <br><a href="{{ documento.arquivo_assinado.url }}" target="_blank" rel="noopener">PDF assinado anexado</a>
+              {% else %}
+                <br><small>Aguardando PDF assinado pelo gov.br</small>
+              {% endif %}
+            </td>
             <td>{{ documento.data_limite|date:"d/m/Y" }}</td>
             <td>
               <span class="badge {{ documento.status }}">{{ documento.get_status_display }}</span>
@@ -41,8 +50,8 @@
                 {% csrf_token %}
                 <button class="icon-link" type="submit" title="Enviar documento real"><i data-lucide="send"></i></button>
               </form>
-              <a class="icon-link" href="{% url 'documento_pdf' documento.pk %}" target="_blank" rel="noopener" title="Abrir PDF editavel"><i data-lucide="file-text"></i></a>
-              <a class="icon-link" href="{% url 'documento_pdf' documento.pk %}?download=1" title="Baixar PDF editavel"><i data-lucide="download"></i></a>
+              <a class="icon-link" href="{% url 'documento_pdf' documento.pk %}" target="_blank" rel="noopener" title="Abrir PDF"><i data-lucide="file-text"></i></a>
+              <a class="icon-link" href="{% url 'documento_pdf' documento.pk %}?download=1" title="Baixar PDF"><i data-lucide="download"></i></a>
               <a class="icon-link" href="{% url 'documento_whatsapp_manual' documento.pk %}" target="_blank" rel="noopener" title="Abrir WhatsApp com mensagem pronta"><i data-lucide="message-circle"></i></a>
               <a class="icon-link" href="{% url 'documento_editar' documento.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
               <a class="icon-link danger" href="{% url 'documento_excluir' documento.pk %}" title="Excluir"><i data-lucide="trash-2"></i></a>

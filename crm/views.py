@@ -954,7 +954,7 @@ def parcela_marcar_pago(request, pk):
 
 def eventos(request):
     busca = request.GET.get("q", "").strip()
-    eventos_qs = Evento.objects.select_related("cliente", "venda").prefetch_related("venda__parcelas")
+    eventos_qs = Evento.objects.select_related("cliente", "venda").prefetch_related("venda__parcelas", "documentos")
     if busca:
         eventos_qs = eventos_qs.filter(Q(nome__icontains=busca) | Q(cliente__nome__icontains=busca) | Q(contato__icontains=busca))
     eventos_qs = eventos_qs.order_by("data_festa", "horario", "nome")
@@ -1050,7 +1050,7 @@ def tarefa_excluir(request, pk):
 
 
 def documentos(request):
-    docs = Documento.objects.select_related("cliente")
+    docs = Documento.objects.select_related("cliente", "evento")
     return render(request, "crm/documentos.html", {"documentos": docs})
 
 
@@ -1143,16 +1143,35 @@ def clientes_importar_planilha(request):
 
 def documento_form(request, pk=None):
     documento = get_object_or_404(Documento, pk=pk) if pk else None
-    form = DocumentoForm(request.POST or None, instance=documento)
+    initial = {}
+    if not documento:
+        evento_id = request.GET.get("evento")
+        if evento_id:
+            evento = get_object_or_404(Evento.objects.select_related("cliente"), pk=evento_id)
+            initial = {
+                "evento": evento,
+                "cliente": evento.cliente,
+                "titulo": f"Contrato - {evento.nome}",
+                "contato_whatsapp": evento.contato or (evento.cliente.telefone if evento.cliente else ""),
+                "contato_email": evento.cliente.email if evento.cliente else "",
+                "data_limite": evento.data_festa,
+            }
+    form = DocumentoForm(request.POST or None, request.FILES or None, instance=documento, initial=initial)
     if request.method == "POST" and form.is_valid():
         documento = form.save(commit=False)
+        if documento.evento and documento.evento.cliente_id:
+            documento.cliente = documento.evento.cliente
         if documento.cliente:
             if not documento.contato_whatsapp:
                 documento.contato_whatsapp = documento.cliente.telefone
             if not documento.contato_email:
                 documento.contato_email = documento.cliente.email
+        if documento.arquivo_assinado:
+            documento.status = "assinado"
+            if not documento.assinado_em:
+                documento.assinado_em = timezone.localdate()
         documento.save()
-        messages.success(request, "Documento salvo com sucesso.")
+        messages.success(request, "Documento salvo e anexado ao evento com sucesso.")
         return redirect("documentos")
     return render(request, "crm/form.html", {"form": form, "titulo": "Documento", "voltar": "documentos"})
 
@@ -1207,7 +1226,7 @@ def documento_enviar(request, pk):
             "ultimo_envio_em",
         ]
     )
-    messages.success(request, "Documento enviado de verdade pelo canal configurado.")
+    messages.success(request, "Documento enviado com PDF e instrucoes para assinatura pelo gov.br.")
     return redirect("documentos")
 
 

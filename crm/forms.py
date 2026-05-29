@@ -278,6 +278,7 @@ class ReuniaoLeadForm(forms.Form):
 
 class EventoForm(forms.ModelForm):
     nome = forms.CharField(label="Nome", max_length=160)
+    email = forms.EmailField(label="E-mail do cliente", required=False)
     tipo_evento = forms.CharField(
         label="Tipo do evento",
         required=False,
@@ -301,6 +302,7 @@ class EventoForm(forms.ModelForm):
         model = Evento
         fields = [
             "nome",
+            "email",
             "tipo_evento",
             "data_festa",
             "horario",
@@ -342,6 +344,7 @@ class EventoForm(forms.ModelForm):
         instance = self.instance
         if instance and instance.pk:
             self.fields["nome"].initial = instance.cliente.nome if instance.cliente else instance.nome
+            self.fields["email"].initial = instance.cliente.email if instance.cliente else ""
             self.fields["tipo_evento"].initial = dict(Evento.TIPO_CHOICES).get(instance.tipo_evento, instance.tipo_evento)
         self.tipo_evento_opcoes = opcoes_tipo_evento()
         clientes = Cliente.objects.order_by("nome")
@@ -384,6 +387,7 @@ class EventoForm(forms.ModelForm):
 
     def save(self, commit=True):
         evento = super().save(commit=False)
+        criando_evento = not evento.pk
         nome = self.cleaned_data["nome"].strip()
         evento.nome = nome
         if evento.forma_pagamento not in {"boleto", "cartao"}:
@@ -392,6 +396,7 @@ class EventoForm(forms.ModelForm):
         if not cliente:
             cliente = Cliente(nome=nome)
         cliente.telefone = evento.contato or cliente.telefone
+        cliente.email = self.cleaned_data.get("email") or cliente.email
         cliente.tipo_evento = evento.tipo_evento or cliente.tipo_evento
         cliente.data_evento = evento.data_festa or cliente.data_evento
         if cliente.data_evento:
@@ -403,10 +408,32 @@ class EventoForm(forms.ModelForm):
             evento.save()
             self.sincronizar_venda(evento)
             self.sincronizar_lembrete_anual(evento)
+            if criando_evento:
+                self.criar_documento_evento(evento)
             self.save_m2m()
         else:
             evento.cliente = cliente
         return evento
+
+    def criar_documento_evento(self, evento):
+        if not evento.cliente_id:
+            return None
+
+        contato_whatsapp = evento.contato or evento.cliente.telefone
+        documento, _ = Documento.objects.get_or_create(
+            evento=evento,
+            defaults={
+                "cliente": evento.cliente,
+                "titulo": f"Contrato - {evento.nome}",
+                "status": "pendente",
+                "contato_whatsapp": contato_whatsapp,
+                "contato_email": evento.cliente.email,
+                "forma_envio": "ambos",
+                "data_limite": evento.data_festa,
+                "observacoes": "Documento criado automaticamente a partir do cadastro do evento.",
+            },
+        )
+        return documento
 
     def sincronizar_venda(self, evento):
         if not evento.cliente_id or not evento.valor_cobrado:
@@ -490,6 +517,7 @@ class DocumentoForm(forms.ModelForm):
         model = Documento
         fields = [
             "cliente",
+            "evento",
             "titulo",
             "status",
             "contato_whatsapp",
@@ -499,6 +527,7 @@ class DocumentoForm(forms.ModelForm):
             "assinado_em",
             "data_limite",
             "conteudo_contrato",
+            "arquivo_assinado",
             "observacoes",
         ]
         widgets = {

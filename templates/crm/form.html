@@ -5,7 +5,7 @@
 
 {% block content %}
 <section class="form-panel">
-  <form method="post" novalidate>
+  <form method="post" enctype="multipart/form-data" novalidate>
     {% csrf_token %}
     <div class="form-grid">
       {% for field in form %}
