@@ -2,7 +2,7 @@ import csv
 import io
 import unicodedata
 import zipfile
-from calendar import monthrange
+from calendar import Calendar, monthrange
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from html import escape
@@ -15,11 +15,36 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 
-from .forms import ClienteForm, DespesaForm, DocumentoForm, EventoForm, OportunidadeForm, ParcelaForm, TarefaForm, VendaForm
+from .forms import (
+    ClienteForm,
+    DespesaForm,
+    DocumentoForm,
+    EventoForm,
+    OportunidadeForm,
+    ParcelaForm,
+    ReuniaoLeadForm,
+    TarefaForm,
+    VendaForm,
+)
 from .models import Cliente, Despesa, Documento, Evento, LembreteAnual, Oportunidade, OportunidadePerdida, Parcela, Tarefa, Venda
 from .pdf import gerar_pdf_documento, nome_pdf_documento
 from .services import EnvioDocumentoError, enviar_documento, link_whatsapp_manual
 
+
+MESES_PT = [
+    "Janeiro",
+    "Fevereiro",
+    "Marco",
+    "Abril",
+    "Maio",
+    "Junho",
+    "Julho",
+    "Agosto",
+    "Setembro",
+    "Outubro",
+    "Novembro",
+    "Dezembro",
+]
 
 CLIENTE_PLANILHA_CAMPOS = [
     ("nome", "Nome"),
@@ -424,7 +449,7 @@ def financeiro_cliente_painel(request, cliente_id):
     status = request.GET.get("status", "")
     hoje = timezone.localdate()
     cliente = get_object_or_404(Cliente, pk=cliente_id)
-    vendas = cliente.vendas.select_related("cliente").prefetch_related("parcelas")
+    vendas = cliente.vendas.select_related("cliente", "evento").prefetch_related("parcelas")
     if status == "vencido":
         vendas = vendas.filter(parcelas__status__in=["pendente", "atrasado"], parcelas__vencimento__lt=hoje).distinct()
     elif status:
@@ -482,9 +507,32 @@ def parcela_excluir(request, pk):
 
 def alertas(request):
     hoje = timezone.localdate()
+    agora = timezone.localtime()
     parcelas = Parcela.objects.select_related("venda", "venda__cliente").exclude(status="pago").filter(
         Q(vencimento__lt=hoje) | Q(lembrete_em__lte=hoje)
     )
+    compromissos_hoje = list(
+        Tarefa.objects.select_related("cliente", "evento", "evento__cliente").filter(data=hoje).order_by("hora", "titulo")
+    )
+    for tarefa in compromissos_hoje:
+        tarefa.alerta_estado = "sem-hora"
+        tarefa.alerta_mensagem = "Compromisso de hoje sem horario definido."
+        tarefa.pode_marcar_concluido = tarefa.status != "concluida"
+        if tarefa.status == "concluida":
+            tarefa.alerta_estado = "concluida"
+            tarefa.alerta_mensagem = "Compromisso confirmado como realizado."
+        elif tarefa.hora:
+            inicio = timezone.make_aware(datetime.combine(hoje, tarefa.hora), timezone.get_current_timezone())
+            minutos = int((inicio - agora).total_seconds() // 60)
+            if minutos > 15:
+                tarefa.alerta_estado = "lembrete"
+                tarefa.alerta_mensagem = f"Lembrete: compromisso marcado para {tarefa.hora:%H:%M}."
+            elif minutos >= 0:
+                tarefa.alerta_estado = "alerta"
+                tarefa.alerta_mensagem = "Alerta: faltam 15 minutos ou menos. Nao perca este compromisso."
+            else:
+                tarefa.alerta_estado = "passado"
+                tarefa.alerta_mensagem = "Horario ja passou. Confirme se o compromisso foi realizado."
     clientes_recompra = [cliente for cliente in Cliente.objects.all() if cliente.precisa_alerta_recompra]
     clientes_evento_hoje = Cliente.objects.filter(data_evento=hoje)
     clientes_edicao = Cliente.objects.filter(data_evento=hoje - timedelta(days=1))
@@ -500,14 +548,25 @@ def alertas(request):
         "crm/alertas.html",
         {
             "parcelas": parcelas,
+            "compromissos_hoje": compromissos_hoje,
             "clientes_recompra": clientes_recompra,
             "clientes_evento_hoje": clientes_evento_hoje,
             "clientes_edicao": clientes_edicao,
             "clientes_copia_cartao": clientes_copia_cartao,
             "lembretes_anuais": lembretes_anuais,
             "hoje": hoje,
+            "agora": agora,
         },
     )
+
+
+def tarefa_marcar_concluida(request, pk):
+    tarefa = get_object_or_404(Tarefa, pk=pk)
+    if request.method == "POST":
+        tarefa.status = "concluida"
+        tarefa.save(update_fields=["status"])
+        messages.success(request, "Compromisso marcado como concluido.")
+    return redirect(request.POST.get("next") or "alertas")
 
 
 def despesas(request):
@@ -604,6 +663,35 @@ def oportunidade_form(request, pk=None):
     return render(request, "crm/form.html", {"form": form, "titulo": "Oportunidade", "voltar": "pipeline"})
 
 
+def oportunidade_reuniao(request, pk):
+    oportunidade = get_object_or_404(Oportunidade, pk=pk)
+    if request.method != "POST":
+        return redirect("pipeline")
+
+    form = ReuniaoLeadForm(request.POST)
+    if form.is_valid():
+        local = form.cleaned_data["local"].strip()
+        Tarefa.objects.create(
+            titulo=f"Reuniao - {oportunidade.nome_lead}",
+            tipo="reuniao",
+            data=form.cleaned_data["dia"],
+            hora=form.cleaned_data["hora"],
+            status="pendente",
+            descricao=(
+                f"Lead: {oportunidade.nome_lead}\n"
+                f"Contato: {oportunidade.contato or '-'}\n"
+                f"Local: {local}\n"
+                f"Origem: {oportunidade.origem or oportunidade.titulo}"
+            ),
+        )
+        oportunidade.proximo_contato = form.cleaned_data["dia"]
+        oportunidade.save(update_fields=["proximo_contato", "atualizado_em"])
+        messages.success(request, "Reuniao criada e adicionada na agenda.")
+    else:
+        messages.error(request, "Informe dia, hora e local para criar a reuniao.")
+    return redirect("pipeline")
+
+
 def preparar_evento_da_oportunidade(oportunidade):
     evento = (
         Evento.objects.filter(
@@ -678,15 +766,144 @@ def oportunidade_excluir(request, pk):
 
 def agenda(request):
     hoje = timezone.localdate()
-    tarefas = Tarefa.objects.select_related("cliente").filter(data__gte=hoje - timedelta(days=7))[:80]
-    return render(request, "crm/agenda.html", {"tarefas": tarefas, "hoje": hoje})
+    data_param = request.GET.get("data", "") or request.GET.get("semana", "")
+    try:
+        data_ref = date.fromisoformat(data_param)
+    except ValueError:
+        data_ref = hoje
+
+    inicio_semana = data_ref - timedelta(days=(data_ref.weekday() + 1) % 7)
+    fim_semana = inicio_semana + timedelta(days=6)
+    inicio_mes = data_ref.replace(day=1)
+    fim_mes = inicio_mes.replace(day=monthrange(inicio_mes.year, inicio_mes.month)[1])
+    horas_grade = list(range(7, 24))
+    tarefas = (
+        Tarefa.objects.select_related("cliente", "evento", "evento__cliente", "evento__venda")
+        .prefetch_related("evento__venda__parcelas")
+        .filter(data__range=(inicio_semana, fim_semana))
+        .order_by("data", "hora", "titulo")
+    )
+
+    tons_tipo = {
+        "trabalho": "trabalho",
+        "reuniao": "reuniao",
+        "entrega": "entrega",
+        "pagamento": "pagamento",
+        "lembrete": "lembrete",
+    }
+    tarefas_por_dia = {inicio_semana + timedelta(days=offset): [] for offset in range(7)}
+    for tarefa in tarefas:
+        tarefas_por_dia.setdefault(tarefa.data, []).append(tarefa)
+
+    dias_semana = []
+    detalhes_tarefas = []
+    for dia, tarefas_dia in tarefas_por_dia.items():
+        itens_horario = []
+        itens_sem_hora = []
+        for tarefa in tarefas_dia:
+            tom = tons_tipo.get(tarefa.tipo, "tarefa")
+            detalhe_id = f"agendaDetalhe{tarefa.pk}"
+            detalhes_tarefas.append(tarefa)
+            item = {
+                "tarefa": tarefa,
+                "detalhe_id": detalhe_id,
+                "tom": tom,
+            }
+            if tarefa.hora:
+                minutos = (tarefa.hora.hour - horas_grade[0]) * 60 + tarefa.hora.minute
+                topo = max(minutos, 0) * 30 / 60
+                item["style"] = f"top: {topo:.0f}px; min-height: 30px;"
+                itens_horario.append(item)
+            else:
+                itens_sem_hora.append(item)
+
+        dias_semana.append(
+            {
+                "data": dia,
+                "iso": dia.isoformat(),
+                "numero": dia.day,
+                "semana": ["Dom.", "Seg.", "Ter.", "Qua.", "Qui.", "Sex.", "Sab."][(dia.weekday() + 1) % 7],
+                "hoje": dia == hoje,
+                "selecionado": dia == data_ref,
+                "itens_horario": itens_horario,
+                "itens_sem_hora": itens_sem_hora,
+                "total": len(tarefas_dia),
+            }
+        )
+
+    mini_calendario = []
+    for semana in Calendar(firstweekday=6).monthdatescalendar(inicio_mes.year, inicio_mes.month):
+        semana_mini = []
+        for dia in semana:
+            semana_mini.append(
+                {
+                    "data": dia,
+                    "iso": dia.isoformat(),
+                    "numero": dia.day,
+                    "no_mes": dia.month == inicio_mes.month,
+                    "hoje": dia == hoje,
+                    "selecionado": inicio_semana <= dia <= fim_semana,
+                }
+            )
+        mini_calendario.append(semana_mini)
+
+    tarefas_mes = Tarefa.objects.filter(data__range=(inicio_mes, fim_mes)).values("tipo").annotate(total=Count("id"))
+    totais_mes = {item["tipo"]: item["total"] for item in tarefas_mes}
+
+    contexto = {
+        "tarefas": tarefas,
+        "dias_semana": dias_semana,
+        "mini_calendario": mini_calendario,
+        "detalhes_tarefas": detalhes_tarefas,
+        "horas_grade": horas_grade,
+        "mes_titulo": f"{MESES_PT[inicio_mes.month - 1]} {inicio_mes.year}",
+        "semana_titulo": f"{inicio_semana:%d/%m} - {fim_semana:%d/%m/%Y}",
+        "semana_anterior": (inicio_semana - timedelta(days=7)).isoformat(),
+        "semana_proxima": (inicio_semana + timedelta(days=7)).isoformat(),
+        "hoje_iso": hoje.isoformat(),
+        "totais_mes": totais_mes,
+        "hoje": hoje,
+    }
+    return render(request, "crm/agenda.html", contexto)
 
 
 def cobrancas(request):
     hoje = timezone.localdate()
-    pagamentos = Parcela.objects.select_related("venda", "venda__cliente").exclude(status="pago").filter(
+    parcelas = Parcela.objects.select_related("venda", "venda__cliente").filter(
         venda__evento__isnull=False
-    )[:40]
+    )
+    grupos_base = [
+        ("vencidos", "Vencidos", "Parcelas em atraso que precisam de cobranca.", "vencido"),
+        ("pagos", "Pagos", "Parcelas recebidas e baixadas no financeiro.", "pago"),
+        ("a_receber", "A Receber", "Parcelas pendentes dentro do prazo.", "pendente"),
+    ]
+    grupos_cobrancas = []
+    for codigo, titulo, descricao, status in grupos_base:
+        itens = [parcela for parcela in parcelas if parcela.status_financeiro == status]
+        clientes = {}
+        for parcela in itens:
+            cliente = parcela.venda.cliente
+            item = clientes.setdefault(
+                cliente.pk,
+                {"cliente": cliente, "parcelas": [], "total": Decimal("0.00"), "vencidas": 0},
+            )
+            item["parcelas"].append(parcela)
+            item["total"] += parcela.valor
+            if parcela.status_financeiro == "vencido":
+                item["vencidas"] += 1
+        grupos_cobrancas.append(
+            {
+                "codigo": codigo,
+                "titulo": titulo,
+                "descricao": descricao,
+                "status": status,
+                "clientes": sorted(clientes.values(), key=lambda item: item["cliente"].nome.lower()),
+                "total": len(itens),
+                "valor_total": sum((parcela.valor for parcela in itens), Decimal("0.00")),
+            }
+        )
+
+    pagamentos = parcelas.exclude(status="pago")[:40]
     pagamentos_por_cliente = {}
     for parcela in pagamentos:
         cliente = parcela.venda.cliente
@@ -701,7 +918,11 @@ def cobrancas(request):
     return render(
         request,
         "crm/cobrancas.html",
-        {"pagamentos_por_cliente": pagamentos_por_cliente.values(), "hoje": hoje},
+        {
+            "grupos_cobrancas": grupos_cobrancas,
+            "pagamentos_por_cliente": pagamentos_por_cliente.values(),
+            "hoje": hoje,
+        },
     )
 
 
@@ -733,10 +954,32 @@ def parcela_marcar_pago(request, pk):
 
 def eventos(request):
     busca = request.GET.get("q", "").strip()
-    eventos_qs = Evento.objects.select_related("cliente")
+    eventos_qs = Evento.objects.select_related("cliente", "venda").prefetch_related("venda__parcelas")
     if busca:
         eventos_qs = eventos_qs.filter(Q(nome__icontains=busca) | Q(cliente__nome__icontains=busca) | Q(contato__icontains=busca))
-    return render(request, "crm/eventos.html", {"eventos": eventos_qs, "busca": busca})
+    eventos_qs = eventos_qs.order_by("data_festa", "horario", "nome")
+
+    grupos_por_mes = {}
+    for evento in eventos_qs:
+        if not evento.data_festa:
+            continue
+        chave = evento.data_festa.replace(day=1)
+        grupos_por_mes.setdefault(
+            chave,
+            {
+                "titulo": f"{MESES_PT[chave.month - 1]} {chave.year}",
+                "descricao": "Eventos cadastrados para este mes.",
+                "eventos": [],
+            },
+        )
+        grupos_por_mes[chave]["eventos"].append(evento)
+
+    grupos_eventos = []
+    for chave in sorted(grupos_por_mes):
+        grupo = grupos_por_mes[chave]
+        grupos_eventos.append({**grupo, "total": len(grupo["eventos"])})
+
+    return render(request, "crm/eventos.html", {"grupos_eventos": grupos_eventos, "busca": busca})
 
 
 def relatorios(request):

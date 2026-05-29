@@ -1,5 +1,6 @@
 from calendar import monthrange
 from decimal import Decimal
+import unicodedata
 
 from django import forms
 from django.utils import timezone
@@ -44,6 +45,49 @@ def calcular_proxima_oportunidade(data_evento):
     if not data_evento:
         return None
     return add_months(add_months(data_evento, 12), -2)
+
+
+def normalizar_texto(valor):
+    texto = unicodedata.normalize("NFKD", (valor or "").strip().lower())
+    return "".join(caractere for caractere in texto if not unicodedata.combining(caractere))
+
+
+def opcoes_tipo_evento():
+    opcoes = []
+    vistos = set()
+    labels_fixos = dict(Evento.TIPO_CHOICES)
+
+    for valor, label in Evento.TIPO_CHOICES:
+        chave = normalizar_texto(label)
+        if chave not in vistos:
+            opcoes.append(label)
+            vistos.add(chave)
+        vistos.add(normalizar_texto(valor))
+
+    tipos_salvos = (
+        Evento.objects.exclude(tipo_evento="")
+        .order_by("tipo_evento")
+        .values_list("tipo_evento", flat=True)
+        .distinct()
+    )
+    for tipo in tipos_salvos:
+        label = labels_fixos.get(tipo, tipo)
+        chave = normalizar_texto(label)
+        if chave and chave not in vistos:
+            opcoes.append(label)
+            vistos.add(chave)
+    return opcoes
+
+
+def valor_tipo_evento_digitado(valor):
+    valor = (valor or "").strip()
+    if not valor:
+        return ""
+    chave_digitada = normalizar_texto(valor)
+    for codigo, label in Evento.TIPO_CHOICES:
+        if chave_digitada in {normalizar_texto(codigo), normalizar_texto(label)}:
+            return codigo
+    return valor
 
 
 class ClienteForm(forms.ModelForm):
@@ -202,6 +246,8 @@ class OportunidadeForm(forms.ModelForm):
         oportunidade.nome_lead = nome
         oportunidade.nome_indicacao = nome_indicacao
         oportunidade.cliente = None
+        if oportunidade.valor_estimado is None:
+            oportunidade.valor_estimado = Decimal("0.00")
         oportunidade.origem = (
             f"Indicação - {nome_indicacao}" if oportunidade.titulo == "Indicacao" and nome_indicacao else oportunidade.titulo
         )
@@ -224,8 +270,26 @@ class OportunidadeForm(forms.ModelForm):
         return cleaned_data
 
 
+class ReuniaoLeadForm(forms.Form):
+    dia = forms.DateField(label="Dia", widget=DateInput())
+    hora = forms.TimeField(label="Hora", widget=forms.TimeInput(attrs={"type": "time"}))
+    local = forms.CharField(label="Local", max_length=180)
+
+
 class EventoForm(forms.ModelForm):
     nome = forms.CharField(label="Nome", max_length=160)
+    tipo_evento = forms.CharField(
+        label="Tipo do evento",
+        required=False,
+        max_length=100,
+        widget=forms.TextInput(
+            attrs={
+                "list": "tipos-evento-cadastrados",
+                "placeholder": "Digite ou escolha um tipo de evento",
+                "autocomplete": "off",
+            }
+        ),
+    )
     valor_cobrado = CurrencyField(
         label="Valor cobrado",
         max_digits=10,
@@ -241,6 +305,8 @@ class EventoForm(forms.ModelForm):
             "data_festa",
             "horario",
             "contato",
+            "local_evento",
+            "em_buffet",
             "valor_cobrado",
             "forma_pagamento",
             "pagamento_recebido",
@@ -253,6 +319,8 @@ class EventoForm(forms.ModelForm):
             "data_festa": "Data festa",
             "horario": "Horario",
             "contato": "Contato",
+            "local_evento": "Local do evento",
+            "em_buffet": "Sera em buffet?",
             "valor_cobrado": "Valor cobrado",
             "forma_pagamento": "Forma de pagamento",
             "pagamento_recebido": "Valor ja foi pago?",
@@ -264,7 +332,7 @@ class EventoForm(forms.ModelForm):
             "data_festa": DateInput(),
             "primeira_parcela": DateInput(),
             "horario": forms.TimeInput(attrs={"type": "time"}),
-            "tipo_evento": forms.Select(),
+            "local_evento": forms.TextInput(attrs={"placeholder": "Ex: Buffet, igreja, salao, endereco"}),
             "quantidade_parcelas": forms.NumberInput(attrs={"min": 1, "max": 60}),
             "observacoes": forms.Textarea(attrs={"rows": 3}),
         }
@@ -274,6 +342,8 @@ class EventoForm(forms.ModelForm):
         instance = self.instance
         if instance and instance.pk:
             self.fields["nome"].initial = instance.cliente.nome if instance.cliente else instance.nome
+            self.fields["tipo_evento"].initial = dict(Evento.TIPO_CHOICES).get(instance.tipo_evento, instance.tipo_evento)
+        self.tipo_evento_opcoes = opcoes_tipo_evento()
         clientes = Cliente.objects.order_by("nome")
         vistos = set()
         self.clientes_opcoes = []
@@ -293,6 +363,14 @@ class EventoForm(forms.ModelForm):
         self.fields["nome"].help_text = "Digite parte do nome para filtrar clientes cadastrados ou informe um nome novo."
         self.fields["pagamento_recebido"].help_text = "Marque quando o valor ja entrou no caixa."
         self.fields["quantidade_parcelas"].widget.attrs.update({"min": 1, "max": 60})
+
+    def clean_tipo_evento(self):
+        return valor_tipo_evento_digitado(self.cleaned_data.get("tipo_evento"))
+
+    def _get_validation_exclusions(self):
+        exclude = super()._get_validation_exclusions()
+        exclude.add("tipo_evento")
+        return exclude
 
     def clean(self):
         cleaned_data = super().clean()

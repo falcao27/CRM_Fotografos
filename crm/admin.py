@@ -54,6 +54,8 @@ class EventoAdmin(admin.ModelAdmin):
         "cliente",
         "tipo_evento",
         "data_festa",
+        "local_evento",
+        "em_buffet",
         "valor_cobrado",
         "forma_pagamento",
         "pagamento_recebido",

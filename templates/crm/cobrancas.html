@@ -2,55 +2,73 @@
 {% load crm_format %}
 
 {% block page_title %}Cobrancas{% endblock %}
-{% block page_subtitle %}Acompanhe pagamentos em aberto e baixe parcelas recebidas.{% endblock %}
+{% block page_subtitle %}Acompanhe pagamentos vencidos, pagos e a receber.{% endblock %}
 
 {% block content %}
-<section class="panel">
-  <div class="panel-head"><h2>Pagamentos a receber</h2></div>
-  <div class="payment-accordion">
-    {% for item in pagamentos_por_cliente %}
-      <details class="payment-client{% if item.vencidas %} has-overdue{% endif %}">
-        <summary>
-          <div>
-            <strong>{{ item.cliente.nome }}</strong>
-            {% if item.vencidas %}
-              <small class="overdue-text">{{ item.vencidas }} pagamento(s) vencido(s)</small>
-            {% endif %}
-          </div>
-          <div class="payment-summary-values">
-            {% if item.vencidas %}<span class="badge vencido">Vencido</span>{% endif %}
-            <span>{{ item.total|brl }}</span>
-          </div>
-        </summary>
-        <div class="payment-details">
-          {% for parcela in item.parcelas %}
-            <div class="payment-detail-row{% if parcela.status_financeiro == 'vencido' %} overdue{% endif %}">
-              <div>
-                <strong>Parcela {{ parcela.numero }}/{{ parcela.venda.quantidade_parcelas }}</strong>
-                <small>{{ parcela.venda.titulo }}</small>
-                {% if parcela.status_financeiro == "vencido" %}
-                  <small class="overdue-text">Pagamento vencido. Cobrar cliente.</small>
-                {% endif %}
-              </div>
-              <div>
-                <b>{{ parcela.valor|brl }}</b>
-                <small>{{ parcela.vencimento|date:"d/m/Y" }}</small>
-                {% if parcela.status_financeiro == "vencido" %}
-                  <span class="badge vencido">Vencido</span>
-                {% endif %}
-              </div>
-              <form class="inline-form" method="post" action="{% url 'parcela_marcar_pago' parcela.pk %}">
-                {% csrf_token %}
-                <input type="hidden" name="next" value="{% url 'cobrancas' %}">
-                <button class="button ghost" type="submit"><i data-lucide="check"></i>Pago</button>
-              </form>
-            </div>
-          {% endfor %}
+<section class="billing-groups">
+  {% for grupo in grupos_cobrancas %}
+    <article class="panel billing-group {{ grupo.codigo }}">
+      <header class="billing-group-head">
+        <div>
+          <h2>{{ grupo.titulo }}</h2>
+          <small>{{ grupo.descricao }}</small>
         </div>
-      </details>
-    {% empty %}
-      <p class="empty">Nenhuma cobranca pendente.</p>
-    {% endfor %}
-  </div>
+        <div class="billing-group-total">
+          <strong>{{ grupo.valor_total|brl }}</strong>
+          <span>{{ grupo.total }} parcela(s)</span>
+        </div>
+      </header>
+
+      <div class="payment-accordion">
+        {% for item in grupo.clientes %}
+          <details class="payment-client{% if item.vencidas %} has-overdue{% endif %}">
+            <summary>
+              <div>
+                <strong>{{ item.cliente.nome }}</strong>
+                <small>{{ item.cliente.telefone|default:"Contato nao informado" }}{% if item.cliente.email %} - {{ item.cliente.email }}{% endif %}</small>
+                {% if item.vencidas %}
+                  <small class="overdue-text">{{ item.vencidas }} pagamento(s) vencido(s)</small>
+                {% endif %}
+              </div>
+              <div class="payment-summary-values">
+                <span class="badge {{ grupo.status }}">{{ grupo.titulo }}</span>
+                <span>{{ item.total|brl }}</span>
+              </div>
+            </summary>
+
+            <div class="payment-details">
+              {% for parcela in item.parcelas %}
+                <div class="payment-detail-row{% if parcela.status_financeiro == 'vencido' %} overdue{% endif %}">
+                  <div>
+                    <strong>Parcela {{ parcela.numero }}/{{ parcela.venda.quantidade_parcelas }}</strong>
+                    <small>{{ parcela.venda.titulo }}</small>
+                    <small>Contato: {{ parcela.venda.cliente.telefone|default:"Nao informado" }}{% if parcela.venda.cliente.email %} - {{ parcela.venda.cliente.email }}{% endif %}</small>
+                    {% if parcela.status_financeiro == "vencido" %}
+                      <small class="overdue-text">Pagamento vencido. Cobrar cliente.</small>
+                    {% endif %}
+                  </div>
+                  <div>
+                    <b>{{ parcela.valor|brl }}</b>
+                    <small>Vence {{ parcela.vencimento|date:"d/m/Y" }}</small>
+                    {% if parcela.data_pagamento %}<small>Pago em {{ parcela.data_pagamento|date:"d/m/Y" }}</small>{% endif %}
+                    <span class="badge {{ parcela.status_financeiro }}">{{ parcela.status_financeiro_label }}</span>
+                  </div>
+                  {% if parcela.status != "pago" %}
+                    <form class="inline-form" method="post" action="{% url 'parcela_marcar_pago' parcela.pk %}">
+                      {% csrf_token %}
+                      <input type="hidden" name="next" value="{% url 'cobrancas' %}">
+                      <button class="button ghost" type="submit"><i data-lucide="check"></i>Pago</button>
+                    </form>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          </details>
+        {% empty %}
+          <p class="empty">Nenhuma parcela neste grupo.</p>
+        {% endfor %}
+      </div>
+    </article>
+  {% endfor %}
 </section>
 {% endblock %}

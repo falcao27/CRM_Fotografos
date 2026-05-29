@@ -1,31 +1,218 @@
 {% extends "base.html" %}
+{% load crm_format %}
+
 {% block page_title %}Agenda inteligente{% endblock %}
-{% block page_subtitle %}Trabalhos e tarefas em uma unica visao.{% endblock %}
+{% block page_subtitle %}Trabalhos, reunioes e entregas em uma agenda semanal.{% endblock %}
 
 {% block content %}
-<section class="toolbar">
-  <div></div>
-  <a class="button" href="{% url 'tarefa_nova' %}"><i data-lucide="plus"></i>Nova tarefa</a>
-</section>
+<section class="calendar-app">
+  <aside class="calendar-sidebar panel">
+    <div class="calendar-create">
+      <a class="button" href="{% url 'tarefa_nova' %}"><i data-lucide="plus"></i>Criar</a>
+      <a class="button ghost" href="{% url 'evento_novo' %}"><i data-lucide="party-popper"></i>Evento</a>
+    </div>
 
-<section class="panel">
-  <div class="panel-head"><h2>Compromissos e trabalhos</h2></div>
-  <div class="timeline-list">
-    {% for tarefa in tarefas %}
-      <div class="timeline-item {{ tarefa.tipo }}">
-        <div>
-          <strong>{{ tarefa.titulo }}</strong>
-          <small>{{ tarefa.data|date:"d/m/Y" }}{% if tarefa.hora %} - {{ tarefa.hora|time:"H:i" }}{% endif %}{% if tarefa.cliente %} - {{ tarefa.cliente.nome }}{% endif %}</small>
+    <div class="mini-calendar-head">
+      <strong>{{ mes_titulo }}</strong>
+      <div class="mini-calendar-nav">
+        <a class="icon-link" href="?data={{ semana_anterior }}" title="Semana anterior"><i data-lucide="chevron-left"></i></a>
+        <a class="icon-link" href="?data={{ semana_proxima }}" title="Proxima semana"><i data-lucide="chevron-right"></i></a>
+      </div>
+    </div>
+
+    <div class="mini-calendar">
+      <div class="mini-weekdays">
+        <span>D</span><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span>
+      </div>
+      {% for semana in mini_calendario %}
+        <div class="mini-week">
+          {% for dia in semana %}
+            <a
+              class="mini-day{% if not dia.no_mes %} muted{% endif %}{% if dia.hoje %} today{% endif %}{% if dia.selecionado %} selected{% endif %}"
+              href="?data={{ dia.iso }}"
+              aria-label="{{ dia.data|date:'d/m/Y' }}"
+            >{{ dia.numero }}</a>
+          {% endfor %}
         </div>
-        <div class="actions">
-          <span class="badge {{ tarefa.status }}">{{ tarefa.get_status_display }}</span>
-          <a class="icon-link" href="{% url 'tarefa_editar' tarefa.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
-          <a class="icon-link danger" href="{% url 'tarefa_excluir' tarefa.pk %}" title="Excluir"><i data-lucide="trash-2"></i></a>
+      {% endfor %}
+    </div>
+
+    <div class="agenda-search">
+      <i data-lucide="users"></i>
+      <span>Clientes e compromissos</span>
+    </div>
+
+    <div class="agenda-sidebar-section">
+      <div class="agenda-sidebar-title">
+        <strong>Minhas agendas</strong>
+        <i data-lucide="chevron-up"></i>
+      </div>
+      <label><span class="legend-swatch tone-trabalho"></span>Trabalhos <b>{{ totais_mes.trabalho|default:0 }}</b></label>
+      <label><span class="legend-swatch tone-reuniao"></span>Reunioes <b>{{ totais_mes.reuniao|default:0 }}</b></label>
+      <label><span class="legend-swatch tone-entrega"></span>Entregas <b>{{ totais_mes.entrega|default:0 }}</b></label>
+      <label><span class="legend-swatch tone-tarefa"></span>Tarefas <b>{{ totais_mes.tarefa|default:0 }}</b></label>
+    </div>
+
+    <div class="agenda-sidebar-section">
+      <div class="agenda-sidebar-title">
+        <strong>Semana</strong>
+      </div>
+      <small>{{ semana_titulo }}</small>
+      <a class="button ghost agenda-today" href="?data={{ hoje_iso }}"><i data-lucide="calendar-check"></i>Hoje</a>
+    </div>
+  </aside>
+
+  <section class="week-calendar panel">
+    <header class="week-calendar-toolbar">
+      <div>
+        <span>Agenda semanal</span>
+        <strong>{{ semana_titulo }}</strong>
+      </div>
+      <div class="week-calendar-actions">
+        <a class="button ghost" href="?data={{ semana_anterior }}"><i data-lucide="chevron-left"></i>Anterior</a>
+        <a class="button ghost" href="?data={{ hoje_iso }}">Hoje</a>
+        <a class="button ghost" href="?data={{ semana_proxima }}">Proxima<i data-lucide="chevron-right"></i></a>
+      </div>
+    </header>
+
+    <div class="week-calendar-shell">
+      <div class="week-days-header">
+        <div class="timezone-label">GMT-03</div>
+        {% for dia in dias_semana %}
+          <a class="week-day-heading{% if dia.hoje %} today{% endif %}" href="?data={{ dia.iso }}">
+            <span>{{ dia.semana }}</span>
+            <strong>{{ dia.numero }}</strong>
+          </a>
+        {% endfor %}
+      </div>
+
+      <div class="all-day-row">
+        <div class="all-day-label">Dia todo</div>
+        {% for dia in dias_semana %}
+          <div class="all-day-cell">
+            {% for item in dia.itens_sem_hora %}
+              <button class="agenda-chip tone-{{ item.tom }}" type="button" data-detail-target="{{ item.detalhe_id }}">
+                {{ item.tarefa.titulo }}
+              </button>
+            {% endfor %}
+          </div>
+        {% endfor %}
+      </div>
+
+      <div class="time-grid">
+        <div class="time-labels">
+          {% for hora in horas_grade %}
+            <span>{{ hora|stringformat:"02d" }}:00</span>
+          {% endfor %}
+        </div>
+
+        <div class="week-columns">
+          {% for dia in dias_semana %}
+            <div class="week-column{% if dia.hoje %} today{% endif %}">
+              {% for hora in horas_grade %}
+                <span class="hour-line"></span>
+              {% endfor %}
+              {% for item in dia.itens_horario %}
+                <button
+                  class="agenda-event tone-{{ item.tom }}"
+                  type="button"
+                  style="{{ item.style }}"
+                  data-detail-target="{{ item.detalhe_id }}"
+                >
+                  <strong>{{ item.tarefa.titulo }}</strong>
+                  <small>{% if item.tarefa.hora %}{{ item.tarefa.hora|time:"H:i" }}{% endif %}{% if item.tarefa.cliente %} - {{ item.tarefa.cliente.nome }}{% endif %}</small>
+                </button>
+              {% endfor %}
+            </div>
+          {% endfor %}
         </div>
       </div>
-    {% empty %}
-      <p class="empty">Nenhuma tarefa cadastrada.</p>
+    </div>
+  </section>
+</section>
+
+<div class="drawer-backdrop" id="agendaDetailBackdrop" hidden></div>
+<aside class="agenda-detail-drawer" id="agendaDetailDrawer" aria-hidden="true" aria-label="Detalhes da agenda">
+  <div class="agenda-detail-shell">
+    <button class="modal-close" type="button" data-close-agenda-detail aria-label="Fechar"><i data-lucide="x"></i></button>
+
+    {% for tarefa in detalhes_tarefas %}
+      <article class="agenda-detail" id="agendaDetalhe{{ tarefa.pk }}" hidden>
+        <header>
+          <span class="badge {{ tarefa.status }}">{{ tarefa.get_status_display }}</span>
+          <h2>{{ tarefa.titulo }}</h2>
+          <p>{{ tarefa.get_tipo_display }} - {{ tarefa.data|date:"d/m/Y" }}{% if tarefa.hora %} as {{ tarefa.hora|time:"H:i" }}{% endif %}</p>
+        </header>
+
+        {% if tarefa.evento %}
+          <dl class="detail-list">
+            <div><dt>Cliente</dt><dd>{% if tarefa.evento.cliente %}{{ tarefa.evento.cliente.nome }}{% else %}{{ tarefa.evento.nome }}{% endif %}</dd></div>
+            <div><dt>Evento</dt><dd>{{ tarefa.evento.get_tipo_evento_display|default:tarefa.evento.tipo_evento|default:"-" }}</dd></div>
+            <div><dt>Contato</dt><dd>{{ tarefa.evento.contato|default:"-" }}</dd></div>
+            <div><dt>Local</dt><dd>{{ tarefa.evento.local_evento|default:"-" }}</dd></div>
+            <div><dt>Buffet</dt><dd>{% if tarefa.evento.em_buffet %}Sim{% else %}Nao{% endif %}</dd></div>
+            <div><dt>Valor</dt><dd>{{ tarefa.evento.valor_cobrado|brl }}</dd></div>
+            <div><dt>Pagamento</dt><dd><span class="badge {{ tarefa.evento.pagamento_status }}">{{ tarefa.evento.pagamento_status_label }}</span></dd></div>
+            <div><dt>Forma</dt><dd>{{ tarefa.evento.get_forma_pagamento_display }}{% if tarefa.evento.quantidade_parcelas > 1 %} - {{ tarefa.evento.quantidade_parcelas }}x{% endif %}</dd></div>
+            <div class="wide"><dt>Observacao</dt><dd>{{ tarefa.evento.observacoes|default:"-" }}</dd></div>
+          </dl>
+          <div class="row-actions">
+            <a class="button" href="{% url 'evento_editar' tarefa.evento.pk %}"><i data-lucide="pencil"></i>Editar evento</a>
+          </div>
+        {% else %}
+          <dl class="detail-list">
+            <div><dt>Cliente</dt><dd>{% if tarefa.cliente %}{{ tarefa.cliente.nome }}{% else %}-{% endif %}</dd></div>
+            <div><dt>Tipo</dt><dd>{{ tarefa.get_tipo_display }}</dd></div>
+            <div class="wide"><dt>Descricao</dt><dd>{{ tarefa.descricao|default:"-" }}</dd></div>
+          </dl>
+          <div class="row-actions">
+            <a class="button" href="{% url 'tarefa_editar' tarefa.pk %}"><i data-lucide="pencil"></i>Editar tarefa</a>
+          </div>
+        {% endif %}
+      </article>
     {% endfor %}
   </div>
-</section>
+</aside>
+
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    const drawer = document.getElementById("agendaDetailDrawer");
+    const backdrop = document.getElementById("agendaDetailBackdrop");
+    const details = document.querySelectorAll(".agenda-detail");
+
+    function refreshIcons() {
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    function openDetail(targetId) {
+      details.forEach(function (detail) {
+        detail.hidden = detail.id !== targetId;
+      });
+      drawer.classList.add("open");
+      drawer.setAttribute("aria-hidden", "false");
+      backdrop.hidden = false;
+      refreshIcons();
+    }
+
+    function closeDetail() {
+      drawer.classList.remove("open");
+      drawer.setAttribute("aria-hidden", "true");
+      backdrop.hidden = true;
+    }
+
+    document.querySelectorAll("[data-detail-target]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        openDetail(button.dataset.detailTarget);
+      });
+    });
+
+    document.querySelectorAll("[data-close-agenda-detail]").forEach(function (button) {
+      button.addEventListener("click", closeDetail);
+    });
+    backdrop.addEventListener("click", closeDetail);
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") closeDetail();
+    });
+  });
+</script>
 {% endblock %}

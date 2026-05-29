@@ -5,6 +5,15 @@
 {% block page_subtitle %}Cobrancas financeiras, eventos e proximas acoes.{% endblock %}
 
 {% block content %}
+<section class="live-clock-panel panel">
+  <div>
+    <span>Relogio ao vivo</span>
+    <strong id="liveClock">{{ agora|date:"H:i:s" }}</strong>
+    <small>{{ hoje|date:"d/m/Y" }}</small>
+  </div>
+  <i data-lucide="clock-3"></i>
+</section>
+
 <section class="alert-grid">
   <div class="panel">
     <div class="panel-head"><h2>Cobrar clientes</h2></div>
@@ -55,6 +64,64 @@
         </div>
       {% empty %}
         <p class="empty">Nenhum evento marcado para hoje.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Agenda de hoje</h2></div>
+    <div class="list">
+      {% for tarefa in compromissos_hoje %}
+        <div class="list-row alert-card agenda-alert-card {{ tarefa.tipo }} {{ tarefa.alerta_estado }}" role="button" tabindex="0">
+          <div>
+            <strong>{{ tarefa.titulo }}</strong>
+            <span>{{ tarefa.get_tipo_display }}{% if tarefa.hora %} - {{ tarefa.hora|time:"H:i" }}{% endif %}</span>
+            <em class="agenda-alert-message">{{ tarefa.alerta_mensagem }}</em>
+            <small class="agenda-alert-meta">
+              {% if tarefa.evento %}
+                <span>Cliente: {% if tarefa.evento.cliente %}{{ tarefa.evento.cliente.nome }}{% else %}{{ tarefa.evento.nome }}{% endif %}</span>
+                {% if tarefa.evento.local_evento %}<span>Local: {{ tarefa.evento.local_evento }}</span>{% endif %}
+              {% elif tarefa.cliente %}
+                <span>Cliente: {{ tarefa.cliente.nome }}</span>
+              {% else %}
+                {% for linha in tarefa.descricao.splitlines %}
+                  {% if linha %}<span>{{ linha }}</span>{% endif %}
+                {% empty %}
+                  <span>Sem detalhes adicionais.</span>
+                {% endfor %}
+              {% endif %}
+            </small>
+          </div>
+          <div class="agenda-alert-actions">
+            <span class="badge {{ tarefa.status }}">{{ tarefa.get_status_display }}</span>
+            {% if tarefa.pode_marcar_concluido %}
+              <form class="inline-form alert-card-action" method="post" action="{% url 'tarefa_marcar_concluida' tarefa.pk %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{% url 'alertas' %}">
+                <button class="button ghost compact-button" type="submit"><i data-lucide="check"></i>Concluir</button>
+              </form>
+            {% endif %}
+          </div>
+          <div class="alert-popup-content">
+            <h3>Compromisso de hoje</h3>
+            <p><strong>Titulo:</strong> {{ tarefa.titulo }}</p>
+            <p><strong>Tipo:</strong> {{ tarefa.get_tipo_display }}</p>
+            <p><strong>Horario:</strong> {% if tarefa.hora %}{{ tarefa.hora|time:"H:i" }}{% else %}Dia todo{% endif %}</p>
+            <p><strong>Status do horario:</strong> {{ tarefa.alerta_mensagem }}</p>
+            {% if tarefa.evento %}
+              <p><strong>Cliente:</strong> {% if tarefa.evento.cliente %}{{ tarefa.evento.cliente.nome }}{% else %}{{ tarefa.evento.nome }}{% endif %}</p>
+              <p><strong>Evento:</strong> {{ tarefa.evento.get_tipo_evento_display|default:tarefa.evento.tipo_evento|default:"-" }}</p>
+              <p><strong>Local:</strong> {{ tarefa.evento.local_evento|default:"-" }}</p>
+              <p><strong>Buffet:</strong> {% if tarefa.evento.em_buffet %}Sim{% else %}Nao{% endif %}</p>
+              <p><strong>Contato:</strong> {{ tarefa.evento.contato|default:"-" }}</p>
+            {% else %}
+              <p><strong>Cliente:</strong> {% if tarefa.cliente %}{{ tarefa.cliente.nome }}{% else %}-{% endif %}</p>
+              <p><strong>Descricao:</strong> {{ tarefa.descricao|linebreaksbr|default:"-" }}</p>
+            {% endif %}
+          </div>
+        </div>
+      {% empty %}
+        <p class="empty">Nenhum compromisso na agenda para hoje.</p>
       {% endfor %}
     </div>
   </div>
@@ -150,6 +217,19 @@
     var modal = document.getElementById("alertModal");
     var modalBody = document.getElementById("alertModalBody");
     var closeButton = modal.querySelector(".modal-close");
+    var liveClock = document.getElementById("liveClock");
+
+    function updateClock() {
+      if (!liveClock) return;
+      liveClock.textContent = new Date().toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+    }
+
+    updateClock();
+    window.setInterval(updateClock, 1000);
 
     function openModal(card) {
       var content = card.querySelector(".alert-popup-content");

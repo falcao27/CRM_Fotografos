@@ -87,7 +87,26 @@
                 {% if etapa.codigo != "negociacao" %}<a href="{% url 'oportunidade_mover' oportunidade.pk 'negociacao' %}" title="Negociacao"><i data-lucide="messages-square"></i></a>{% endif %}
                 {% if etapa.codigo != "fechado" %}<a href="{% url 'oportunidade_mover' oportunidade.pk 'fechado' %}" title="Fechar e abrir cadastro do cliente"><i data-lucide="check"></i></a>{% endif %}
                 {% if etapa.codigo != "perdido" %}<a href="{% url 'oportunidade_mover' oportunidade.pk 'perdido' %}" title="Arquivar como perdido"><i data-lucide="x"></i></a>{% endif %}
+                <button type="button" data-meeting-toggle title="Criar reuniao"><i data-lucide="calendar-plus"></i></button>
               </div>
+              <form class="lead-meeting-form" method="post" action="{% url 'oportunidade_reuniao' oportunidade.pk %}" hidden>
+                {% csrf_token %}
+                <label>
+                  <span>Dia</span>
+                  <input type="date" name="dia" required>
+                </label>
+                <label>
+                  <span>Hora</span>
+                  <input type="time" name="hora" required>
+                </label>
+                <label class="wide">
+                  <span>Local</span>
+                  <input type="text" name="local" maxlength="180" placeholder="Local da reuniao" required>
+                </label>
+                <div class="lead-meeting-actions">
+                  <button class="button" type="submit"><i data-lucide="calendar-plus"></i>Criar reuniao</button>
+                </div>
+              </form>
             </div>
           {% empty %}
             <p class="empty">Sem leads nesta etapa.</p>
@@ -104,7 +123,7 @@
 
     document.querySelectorAll(".kanban-card").forEach(function (card) {
       card.addEventListener("dragstart", function (event) {
-        if (event.target.closest(".kanban-actions")) {
+        if (event.target.closest(".kanban-actions") || event.target.closest(".lead-meeting-form")) {
           event.preventDefault();
           return;
         }
@@ -121,6 +140,19 @@
           column.classList.remove("drag-over");
         });
         draggedCard = null;
+      });
+    });
+
+    document.querySelectorAll("[data-meeting-toggle]").forEach(function (button) {
+      button.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        const card = button.closest(".kanban-card");
+        const form = card.querySelector(".lead-meeting-form");
+        document.querySelectorAll(".lead-meeting-form").forEach(function (item) {
+          if (item !== form) item.hidden = true;
+        });
+        form.hidden = !form.hidden;
       });
     });
 

@@ -26,6 +26,13 @@
         <div>
           <h2>{{ venda.titulo }}</h2>
           <p>{{ venda.get_condicao_pagamento_display }} via {{ venda.get_forma_pagamento_display }} - {{ venda.data_venda|date:"d/m/Y" }}</p>
+          {% if venda.evento %}
+            <small>
+              Evento em {{ venda.evento.data_festa|date:"d/m/Y" }}{% if venda.evento.horario %} as {{ venda.evento.horario|time:"H:i" }}{% endif %}
+              {% if venda.evento.local_evento %} - {{ venda.evento.local_evento }}{% endif %}
+              {% if venda.evento.em_buffet %} - Buffet{% endif %}
+            </small>
+          {% endif %}
         </div>
         <div class="sale-total">
           <span class="badge {{ venda.status }}">{{ venda.get_status_display }}</span>

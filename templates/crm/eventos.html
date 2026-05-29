@@ -13,46 +13,97 @@
   <a class="button" href="{% url 'evento_novo' %}"><i data-lucide="plus"></i>Novo evento</a>
 </section>
 
-<section class="panel">
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Nome</th>
-          <th>Evento</th>
-          <th>Data</th>
-          <th>Valor</th>
-          <th>Pagamento</th>
-          <th>Pagamento</th>
-          <th>Contato</th>
-          <th>Observacao</th>
-          <th>Acoes</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for evento in eventos %}
-          <tr>
-            <td><strong>{{ evento.nome }}</strong>{% if evento.cliente %}<br><small>Cliente cadastrado</small>{% endif %}</td>
-            <td>{{ evento.get_tipo_evento_display|default:"-" }}</td>
-            <td>
-              {% if evento.data_festa %}{{ evento.data_festa|date:"d/m/Y" }}{% else %}-{% endif %}
-              {% if evento.horario %}<br><small>{{ evento.horario|time:"H:i" }}</small>{% endif %}
-            </td>
-            <td>{{ evento.valor_cobrado|brl }}</td>
-            <td>{{ evento.get_forma_pagamento_display }}{% if evento.quantidade_parcelas > 1 %}<br><small>{{ evento.quantidade_parcelas }}x</small>{% endif %}</td>
-            <td><span class="badge {{ evento.pagamento_status }}">{{ evento.pagamento_status_label }}</span></td>
-            <td>{{ evento.contato|default:"-" }}</td>
-            <td>{{ evento.observacoes|truncatechars:70|default:"-" }}</td>
-            <td class="actions">
-              <a class="icon-link" href="{% url 'evento_editar' evento.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
-              <a class="icon-link danger" href="{% url 'evento_excluir' evento.pk %}" title="Excluir"><i data-lucide="trash-2"></i></a>
-            </td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="9">Nenhum evento cadastrado.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+<section class="finance-groups">
+  {% for grupo in grupos_eventos %}
+    <button class="panel finance-group-trigger" type="button" data-event-target="eventosMes{{ forloop.counter }}">
+      <span>{{ grupo.titulo }}</span>
+      <small>{{ grupo.descricao }}</small>
+      <strong>{{ grupo.total }}</strong>
+    </button>
+  {% empty %}
+    <section class="panel"><p class="empty">Nenhum evento com data marcada.</p></section>
+  {% endfor %}
 </section>
+
+<section class="finance-group-popups">
+  {% for grupo in grupos_eventos %}
+    <article class="panel finance-group-panel" id="eventosMes{{ forloop.counter }}" hidden>
+      <button class="modal-close finance-group-close" type="button" data-event-close aria-label="Fechar"><i data-lucide="x"></i></button>
+      <h2>{{ grupo.titulo }}</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Nome</th>
+              <th>Evento</th>
+              <th>Data</th>
+              <th>Local</th>
+              <th>Buffet</th>
+              <th>Valor</th>
+              <th>Forma de Pagamento</th>
+              <th>Pagamento</th>
+              <th>Contato</th>
+              <th>Observacao</th>
+              <th>Acoes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for evento in grupo.eventos %}
+              <tr>
+                <td><strong>{{ evento.nome }}</strong>{% if evento.cliente %}<br><small>Cliente cadastrado</small>{% endif %}</td>
+                <td>{{ evento.get_tipo_evento_display|default:"-" }}</td>
+                <td>
+                  {{ evento.data_festa|date:"d/m/Y" }}
+                  {% if evento.horario %}<br><small>{{ evento.horario|time:"H:i" }}</small>{% endif %}
+                </td>
+                <td>{{ evento.local_evento|default:"-" }}</td>
+                <td>{% if evento.em_buffet %}Sim{% else %}Nao{% endif %}</td>
+                <td>{{ evento.valor_cobrado|brl }}</td>
+                <td>{{ evento.get_forma_pagamento_display }}{% if evento.quantidade_parcelas > 1 %}<br><small>{{ evento.quantidade_parcelas }}x</small>{% endif %}</td>
+                <td><span class="badge {{ evento.pagamento_status }}">{{ evento.pagamento_status_label }}</span></td>
+                <td>{{ evento.contato|default:"-" }}</td>
+                <td>{{ evento.observacoes|truncatechars:70|default:"-" }}</td>
+                <td class="actions">
+                  <a class="icon-link" href="{% url 'evento_editar' evento.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
+                  <a class="icon-link danger" href="{% url 'evento_excluir' evento.pk %}" title="Excluir"><i data-lucide="trash-2"></i></a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  {% endfor %}
+</section>
+
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    function refreshIcons() {
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    document.querySelectorAll("[data-event-target]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        const panel = document.getElementById(button.dataset.eventTarget);
+        document.querySelectorAll(".finance-group-panel").forEach(function (item) {
+          item.hidden = item !== panel || !item.hidden;
+        });
+        refreshIcons();
+      });
+    });
+
+    document.querySelectorAll("[data-event-close]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        button.closest(".finance-group-panel").hidden = true;
+      });
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape") return;
+      document.querySelectorAll(".finance-group-panel:not([hidden])").forEach(function (panel) {
+        panel.hidden = true;
+      });
+    });
+  });
+</script>
 {% endblock %}

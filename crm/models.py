@@ -262,6 +262,8 @@ class Evento(models.Model):
     data_festa = models.DateField(null=True, blank=True)
     horario = models.TimeField(null=True, blank=True)
     contato = models.CharField(max_length=80, blank=True)
+    local_evento = models.CharField(max_length=180, blank=True)
+    em_buffet = models.BooleanField(default=False)
     valor_cobrado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     forma_pagamento = models.CharField(max_length=20, choices=Venda.FORMA_CHOICES, default="pix")
     pagamento_recebido = models.BooleanField(default=False)
@@ -337,6 +339,13 @@ class Tarefa(models.Model):
     ]
 
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, related_name="tarefas")
+    evento = models.OneToOneField(
+        "Evento",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="agenda_trabalho",
+    )
     titulo = models.CharField(max_length=160)
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default="tarefa")
     data = models.DateField(default=timezone.localdate)

@@ -70,6 +70,7 @@
           <div>
             <strong>{{ evento.nome }}</strong>
             <span>{{ evento.get_tipo_evento_display|default:"Evento" }}{% if evento.data_festa %} - {{ evento.data_festa|date:"d/m/Y" }}{% endif %}</span>
+            <small>{{ evento.local_evento|default:"Local nao informado" }}{% if evento.em_buffet %} - Buffet{% endif %}</small>
           </div>
           <b>{{ evento.valor_cobrado|brl }}</b>
         </div>

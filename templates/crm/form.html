@@ -19,6 +19,13 @@
               {% endfor %}
             </datalist>
           {% endif %}
+          {% if field.name == "tipo_evento" and form.tipo_evento_opcoes %}
+            <datalist id="tipos-evento-cadastrados">
+              {% for tipo_evento in form.tipo_evento_opcoes %}
+                <option value="{{ tipo_evento }}"></option>
+              {% endfor %}
+            </datalist>
+          {% endif %}
           {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
           {% for error in field.errors %}<em>{{ error }}</em>{% endfor %}
         </label>
