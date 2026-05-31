@@ -1,0 +1,257 @@
+from io import BytesIO
+
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase
+from django.urls import reverse
+
+from .models import Cliente, Despesa, Documento, Evento, Oportunidade, Parcela, Tarefa, Venda
+from .views import ler_linhas_xlsx
+
+
+class EventoDocumentoFlowTests(TestCase):
+    def dados_evento(self):
+        return {
+            "nome": "Maria Silva",
+            "email": "maria@example.com",
+            "tipo_evento": "aniversario_infantil",
+            "data_festa": "2026-07-10",
+            "horario": "15:00",
+            "contato": "(85) 99999-0000",
+            "local_evento": "Buffet Central",
+            "em_buffet": "on",
+            "valor_cobrado": "1200,00",
+            "forma_pagamento": "pix",
+            "quantidade_parcelas": "1",
+            "primeira_parcela": "2026-06-10",
+            "parcela_numero": ["1"],
+            "parcela_valor": ["1200,00"],
+            "parcela_vencimento": ["2026-06-10"],
+            "observacoes": "Contrato automatico",
+        }
+
+    def test_criar_evento_gera_documento_rascunho_e_volta_para_eventos(self):
+        response = self.client.post(reverse("evento_novo"), self.dados_evento())
+
+        evento = Evento.objects.get(nome="Maria Silva")
+        documento = Documento.objects.get(evento=evento)
+        self.assertEqual(documento.status, "rascunho")
+        self.assertEqual(documento.cliente, evento.cliente)
+        self.assertRedirects(response, reverse("eventos"))
+
+    def test_formulario_evento_exibe_campos_e_previa_do_contrato(self):
+        response = self.client.get(reverse("evento_novo"))
+
+        self.assertContains(response, "contract-workspace")
+        self.assertContains(response, "CONTRATO DE SERVICO")
+        self.assertContains(response, "id_cpf_contratante")
+        self.assertContains(response, "id_descricao_servico")
+        self.assertContains(response, "parcela_numero")
+        self.assertContains(response, "parcela_valor")
+        self.assertContains(response, "parcela_vencimento")
+        self.assertContains(response, "id_valor_restante_contrato")
+        self.assertContains(response, 'name="valor_cobrado"')
+        self.assertNotContains(response, 'name="valor_cobrado" value="0,00"')
+
+    def test_evento_vindo_de_lead_fechado_mostra_valor_fechado(self):
+        oportunidade = Oportunidade.objects.create(
+            nome_lead="Lead Fechado",
+            titulo="Instagram",
+            tipo_evento="aniversario_infantil",
+            etapa="negociacao",
+            valor_estimado="500.00",
+            valor_negociado="750.00",
+            data_festa="2026-08-12",
+            contato="(85) 99999-1111",
+        )
+
+        response = self.client.get(reverse("oportunidade_mover", args=[oportunidade.pk, "fechado"]), follow=True)
+
+        self.assertContains(response, 'name="valor_cobrado"')
+        self.assertContains(response, 'value="750,00"')
+
+    def test_lista_clientes_conta_apenas_vendas_de_eventos(self):
+        self.client.post(reverse("evento_novo"), self.dados_evento())
+        cliente = Cliente.objects.get(nome="Maria Silva")
+        Venda.objects.create(
+            cliente=cliente,
+            titulo="Venda avulsa",
+            valor_total="100.00",
+            status="pago",
+            forma_pagamento="pix",
+            condicao_pagamento="avista",
+            quantidade_parcelas=1,
+        )
+
+        response = self.client.get(reverse("clientes"))
+
+        cliente_listado = response.context["clientes"].get(pk=cliente.pk)
+        self.assertEqual(cliente_listado.total_vendas, 1)
+
+    def test_contrato_usa_informacoes_preenchidas_no_evento(self):
+        dados = self.dados_evento()
+        dados.update(
+            {
+                "cpf_contratante": "123.456.789-00",
+                "endereco_contratante": "Rua das Flores, 100",
+                "aniversariante": "Theo Silva",
+                "idade": "5 anos",
+                "horario_fim": "18:00",
+                "descricao_servico": "Cobertura fotografica completa com link digital.",
+                "adiantamento": "300,00",
+                "parcela_valor": ["900,00"],
+                "autoriza_uso_imagem": "on",
+            }
+        )
+
+        self.client.post(reverse("evento_novo"), dados)
+
+        documento = Documento.objects.select_related("evento", "cliente").get()
+        contrato = documento.contrato_renderizado()
+        self.assertIn("CPF: 123.456.789-00", contrato)
+        self.assertIn("ENDERECO: Rua das Flores, 100", contrato)
+        self.assertIn("NOME DO ANIVERSARIANTE: Theo Silva", contrato)
+        self.assertIn("IDADE: 5 anos", contrato)
+        self.assertIn("HORARIO: 15:00 as 18:00", contrato)
+        self.assertIn("Cobertura fotografica completa com link digital.", contrato)
+        self.assertIn("ADIANTAMENTO: R$ 300,00", contrato)
+        self.assertIn("RESTANTE: R$ 900,00", contrato)
+
+    def test_formulario_salva_parcelas_informadas_no_contrato(self):
+        dados = self.dados_evento()
+        dados.update(
+            {
+                "forma_pagamento": "pix",
+                "quantidade_parcelas": "2",
+                "parcela_numero": ["1", "2"],
+                "parcela_valor": ["500,00", "700,00"],
+                "parcela_vencimento": ["2026-06-10", "2026-07-10"],
+            }
+        )
+
+        self.client.post(reverse("evento_novo"), dados)
+
+        parcelas = list(Parcela.objects.order_by("numero"))
+        self.assertEqual(len(parcelas), 2)
+        self.assertEqual(parcelas[0].numero, 1)
+        self.assertEqual(str(parcelas[0].valor), "500.00")
+        self.assertEqual(parcelas[0].vencimento.isoformat(), "2026-06-10")
+        self.assertEqual(parcelas[1].numero, 2)
+        self.assertEqual(str(parcelas[1].valor), "700.00")
+        self.assertEqual(parcelas[1].vencimento.isoformat(), "2026-07-10")
+
+    def test_parcelas_devem_somar_valor_restante_apos_adiantamento(self):
+        dados = self.dados_evento()
+        dados.update(
+            {
+                "valor_cobrado": "800,00",
+                "adiantamento": "200,00",
+                "forma_pagamento": "boleto",
+                "quantidade_parcelas": "3",
+                "parcela_numero": ["1", "2", "3"],
+                "parcela_valor": ["200,00", "200,00", "200,00"],
+                "parcela_vencimento": ["2026-06-26", "2026-07-26", "2026-08-26"],
+            }
+        )
+
+        response = self.client.post(reverse("evento_novo"), dados)
+
+        self.assertRedirects(response, reverse("eventos"))
+        parcelas = list(Parcela.objects.order_by("numero"))
+        self.assertEqual(len(parcelas), 3)
+        self.assertEqual(sum((parcela.valor for parcela in parcelas)), 600)
+
+    def test_documento_rascunho_nao_envia_antes_de_salvar_revisao(self):
+        self.client.post(reverse("evento_novo"), self.dados_evento())
+        documento = Documento.objects.get()
+
+        response = self.client.post(reverse("documento_enviar", args=[documento.pk]))
+
+        documento.refresh_from_db()
+        self.assertEqual(documento.status, "rascunho")
+        self.assertRedirects(response, reverse("documento_editar", args=[documento.pk]))
+
+    def test_salvar_documento_revisado_libera_envio_e_pdf_usa_texto_editado(self):
+        self.client.post(reverse("evento_novo"), self.dados_evento())
+        documento = Documento.objects.select_related("cliente", "evento").get()
+        conteudo = "CONTRATO REVISADO PARA {{ cliente_nome }}\nClausula especial editada."
+
+        response = self.client.post(
+            reverse("documento_editar", args=[documento.pk]),
+            {
+                "cliente": documento.cliente_id,
+                "evento": documento.evento_id,
+                "titulo": documento.titulo,
+                "status": documento.status,
+                "contato_whatsapp": documento.contato_whatsapp,
+                "contato_email": documento.contato_email,
+                "forma_envio": documento.forma_envio,
+                "enviado_em": "",
+                "assinado_em": "",
+                "data_limite": documento.data_limite.isoformat(),
+                "conteudo_contrato": conteudo,
+                "observacoes": documento.observacoes,
+            },
+        )
+
+        documento.refresh_from_db()
+        self.assertRedirects(response, reverse("documentos"))
+        self.assertEqual(documento.status, "pendente")
+
+        pdf_response = self.client.get(reverse("documento_pdf", args=[documento.pk]))
+        self.assertEqual(pdf_response.status_code, 200)
+        self.assertIn(b"Clausula especial editada.", pdf_response.content)
+
+
+class ClientePlanilhaTests(TestCase):
+    def test_planilha_exportada_nao_pede_proxima_oportunidade(self):
+        response = self.client.get(reverse("clientes_exportar_planilha"))
+
+        linhas = ler_linhas_xlsx(BytesIO(response.content))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Data do evento", linhas[0])
+        self.assertNotIn("Proxima oportunidade", linhas[0])
+
+    def test_importacao_calcula_proxima_oportunidade_pela_data_do_evento(self):
+        conteudo = "Nome,Telefone,Email,Origem,Tipo de evento,Data do evento,Observacoes\n"
+        conteudo += "Marcos Torres,8595989898,marcos@teste.com,Instagram,Aniversario,30/05/2026,Cliente importado\n"
+        arquivo = SimpleUploadedFile("clientes.csv", conteudo.encode("utf-8"), content_type="text/csv")
+
+        response = self.client.post(reverse("clientes_importar_planilha"), {"planilha": arquivo})
+
+        cliente = Cliente.objects.get(nome="Marcos Torres")
+        self.assertRedirects(response, reverse("clientes"))
+        self.assertEqual(cliente.data_evento.isoformat(), "2026-05-30")
+        self.assertEqual(cliente.proxima_oportunidade.isoformat(), "2027-03-30")
+
+
+class AgendaTests(TestCase):
+    def test_mini_calendario_exibe_marcadores_coloridos_por_tipo(self):
+        Tarefa.objects.create(titulo="Trabalho teste", tipo="trabalho", data="2026-05-24")
+        Tarefa.objects.create(titulo="Reuniao teste", tipo="reuniao", data="2026-05-24")
+
+        response = self.client.get(reverse("agenda"), {"data": "2026-05-24"})
+
+        self.assertContains(response, "mini-day-marker tone-trabalho")
+        self.assertContains(response, "mini-day-marker tone-reuniao")
+
+
+class DespesasTests(TestCase):
+    def test_despesas_sao_agrupadas_por_mes(self):
+        Despesa.objects.create(descricao="Aluguel", categoria="Fixo", valor="500.00", data="2026-05-05")
+        Despesa.objects.create(descricao="Album", categoria="Produto", valor="300.00", data="2026-06-10")
+
+        response = self.client.get(reverse("despesas"))
+
+        self.assertContains(response, "Maio 2026")
+        self.assertContains(response, "Junho 2026")
+        self.assertContains(response, "Relatorio PDF")
+
+    def test_relatorio_pdf_despesas_mes(self):
+        Despesa.objects.create(descricao="Aluguel", categoria="Fixo", valor="500.00", data="2026-05-05")
+
+        response = self.client.get(reverse("despesas_relatorio_pdf", args=[2026, 5]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn(b"Aluguel", response.content)

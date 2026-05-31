@@ -9,6 +9,7 @@ from html import escape
 from xml.etree import ElementTree as ET
 
 from django.contrib import messages
+from django.db import transaction
 from django.http import HttpResponse
 from django.db.models import Case, Count, DecimalField, F, Q, Sum, When
 from django.shortcuts import get_object_or_404, redirect, render
@@ -17,6 +18,7 @@ from django.utils import timezone
 
 from .forms import (
     ClienteForm,
+    calcular_proxima_oportunidade,
     DespesaForm,
     DocumentoForm,
     EventoForm,
@@ -26,8 +28,20 @@ from .forms import (
     TarefaForm,
     VendaForm,
 )
-from .models import Cliente, Despesa, Documento, Evento, LembreteAnual, Oportunidade, OportunidadePerdida, Parcela, Tarefa, Venda
-from .pdf import gerar_pdf_documento, nome_pdf_documento
+from .models import (
+    CONTRATO_FESTA_INFANTIL_TEMPLATE,
+    Cliente,
+    Despesa,
+    Documento,
+    Evento,
+    LembreteAnual,
+    Oportunidade,
+    OportunidadePerdida,
+    Parcela,
+    Tarefa,
+    Venda,
+)
+from .pdf import gerar_pdf_documento, gerar_pdf_relatorio_despesas, nome_pdf_documento
 from .services import EnvioDocumentoError, enviar_documento, link_whatsapp_manual
 
 
@@ -53,7 +67,6 @@ CLIENTE_PLANILHA_CAMPOS = [
     ("origem", "Origem"),
     ("tipo_evento", "Tipo de evento"),
     ("data_evento", "Data do evento"),
-    ("proxima_oportunidade", "Proxima oportunidade"),
     ("observacoes", "Observacoes"),
 ]
 
@@ -101,7 +114,7 @@ def ler_data_planilha(valor):
             return date(1899, 12, 30) + timedelta(days=int(serial_excel))
     except ValueError:
         pass
-    for formato in ("%d/%m/%Y", "%Y-%m-%d"):
+    for formato in ("%d/%m/%Y", "%Y-%m-%d", "%d/%m/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
         try:
             return date.fromisoformat(valor) if formato == "%Y-%m-%d" else datetime.strptime(valor, formato).date()
         except ValueError:
@@ -136,7 +149,6 @@ def montar_xlsx_clientes(clientes):
                 cliente.origem,
                 cliente.tipo_evento,
                 formatar_data_planilha(cliente.data_evento),
-                formatar_data_planilha(cliente.proxima_oportunidade),
                 cliente.observacoes,
             ]
         )
@@ -343,7 +355,9 @@ def dashboard(request):
 
 def clientes(request):
     busca = request.GET.get("q", "").strip()
-    queryset = Cliente.objects.annotate(total_vendas=Count("vendas"))
+    queryset = Cliente.objects.annotate(
+        total_vendas=Count("vendas", filter=Q(vendas__evento__isnull=False))
+    )
     if busca:
         queryset = queryset.filter(
             Q(nome__icontains=busca) | Q(telefone__icontains=busca) | Q(email__icontains=busca)
@@ -571,10 +585,63 @@ def tarefa_marcar_concluida(request, pk):
 
 def despesas(request):
     status = request.GET.get("status", "")
-    despesas_qs = Despesa.objects.all()
+    despesas_qs = Despesa.objects.all().order_by("data", "descricao")
     if status:
         despesas_qs = despesas_qs.filter(status=status)
-    return render(request, "crm/despesas.html", {"despesas": despesas_qs, "status": status})
+
+    grupos_por_mes = {}
+    for despesa in despesas_qs:
+        chave = despesa.data.replace(day=1)
+        grupos_por_mes.setdefault(
+            chave,
+            {
+                "chave": chave,
+                "titulo": f"{MESES_PT[chave.month - 1]} {chave.year}",
+                "descricao": "Despesas cadastradas para este mes.",
+                "despesas": [],
+                "total_valor": Decimal("0.00"),
+                "pagas": 0,
+                "pendentes": 0,
+            },
+        )
+        grupo = grupos_por_mes[chave]
+        grupo["despesas"].append(despesa)
+        grupo["total_valor"] += despesa.valor
+        if despesa.status == "pago":
+            grupo["pagas"] += 1
+        else:
+            grupo["pendentes"] += 1
+
+    grupos_despesas = []
+    for chave in sorted(grupos_por_mes):
+        grupo = grupos_por_mes[chave]
+        grupos_despesas.append({**grupo, "total": len(grupo["despesas"])})
+
+    return render(
+        request,
+        "crm/despesas.html",
+        {"grupos_despesas": grupos_despesas, "status": status},
+    )
+
+
+def despesas_relatorio_pdf(request, ano, mes):
+    status = request.GET.get("status", "")
+    inicio = date(ano, mes, 1)
+    fim = inicio.replace(day=monthrange(ano, mes)[1])
+    despesas_qs = Despesa.objects.filter(data__range=(inicio, fim)).order_by("data", "descricao")
+    if status:
+        despesas_qs = despesas_qs.filter(status=status)
+    despesas_lista = list(despesas_qs)
+    total = sum((despesa.valor for despesa in despesas_lista), Decimal("0.00"))
+    titulo = f"Relatorio de despesas - {MESES_PT[mes - 1]} {ano}"
+    if status:
+        titulo += f" - {dict(Despesa.STATUS_CHOICES).get(status, status)}"
+    response = HttpResponse(
+        gerar_pdf_relatorio_despesas(titulo, despesas_lista, total),
+        content_type="application/pdf",
+    )
+    response["Content-Disposition"] = f'inline; filename="despesas_{ano}_{mes:02d}.pdf"'
+    return response
 
 
 def despesa_form(request, pk=None):
@@ -791,6 +858,14 @@ def agenda(request):
         "pagamento": "pagamento",
         "lembrete": "lembrete",
     }
+    tarefas_mes_lista = Tarefa.objects.filter(data__range=(inicio_mes, fim_mes)).order_by("data", "tipo")
+    tons_por_dia_mes = {}
+    for tarefa in tarefas_mes_lista:
+        tom = tons_tipo.get(tarefa.tipo, "tarefa")
+        tons = tons_por_dia_mes.setdefault(tarefa.data, [])
+        if tom not in tons:
+            tons.append(tom)
+
     tarefas_por_dia = {inicio_semana + timedelta(days=offset): [] for offset in range(7)}
     for tarefa in tarefas:
         tarefas_por_dia.setdefault(tarefa.data, []).append(tarefa)
@@ -843,11 +918,12 @@ def agenda(request):
                     "no_mes": dia.month == inicio_mes.month,
                     "hoje": dia == hoje,
                     "selecionado": inicio_semana <= dia <= fim_semana,
+                    "tons": tons_por_dia_mes.get(dia, []),
                 }
             )
         mini_calendario.append(semana_mini)
 
-    tarefas_mes = Tarefa.objects.filter(data__range=(inicio_mes, fim_mes)).values("tipo").annotate(total=Count("id"))
+    tarefas_mes = tarefas_mes_lista.values("tipo").annotate(total=Count("id"))
     totais_mes = {item["tipo"]: item["total"] for item in tarefas_mes}
 
     contexto = {
@@ -952,6 +1028,127 @@ def parcela_marcar_pago(request, pk):
     return redirect(request.POST.get("next") or "cobrancas")
 
 
+def decimal_brasileiro(valor):
+    valor = (valor or "").strip()
+    if not valor:
+        return None
+    if "," in valor:
+        valor = valor.replace(".", "").replace(",", ".")
+    elif valor.count(".") > 1:
+        partes = valor.split(".")
+        valor = "".join(partes[:-1]) + "." + partes[-1]
+    try:
+        return Decimal(valor).quantize(Decimal("0.01"))
+    except Exception:
+        return None
+
+
+def parcelas_do_request(request, form):
+    numeros = request.POST.getlist("parcela_numero")
+    valores = request.POST.getlist("parcela_valor")
+    vencimentos = request.POST.getlist("parcela_vencimento")
+    parcelas = []
+    houve_erro = False
+
+    for indice, numero_texto in enumerate(numeros):
+        numero_texto = (numero_texto or "").strip()
+        valor_texto = valores[indice] if indice < len(valores) else ""
+        vencimento_texto = vencimentos[indice] if indice < len(vencimentos) else ""
+        if not numero_texto and not valor_texto and not vencimento_texto:
+            continue
+
+        try:
+            numero = int(numero_texto)
+        except ValueError:
+            numero = 0
+        valor = decimal_brasileiro(valor_texto)
+        vencimento = None
+        if vencimento_texto:
+            try:
+                vencimento = date.fromisoformat(vencimento_texto)
+            except ValueError:
+                vencimento = None
+
+        if numero < 1:
+            form.add_error(None, "Informe o numero de cada parcela.")
+            houve_erro = True
+        if valor is None:
+            form.add_error(None, "Informe o valor de cada parcela.")
+            houve_erro = True
+        if vencimento is None:
+            form.add_error(None, "Informe a data de vencimento de cada parcela.")
+            houve_erro = True
+
+        parcelas.append({"numero": numero, "valor": valor or Decimal("0.00"), "vencimento": vencimento})
+
+    if not parcelas:
+        form.add_error(None, "Informe pelo menos uma parcela com numero, valor e vencimento.")
+        houve_erro = True
+
+    numeros_repetidos = len({parcela["numero"] for parcela in parcelas}) != len(parcelas)
+    if numeros_repetidos:
+        form.add_error(None, "Os numeros das parcelas nao podem se repetir.")
+        houve_erro = True
+    total_parcelas = sum((parcela["valor"] for parcela in parcelas), Decimal("0.00"))
+    valor_total = form.cleaned_data.get("valor_cobrado") or Decimal("0.00")
+    adiantamento = form.cleaned_data.get("adiantamento") or Decimal("0.00")
+    valor_restante = max(valor_total - adiantamento, Decimal("0.00"))
+    if total_parcelas != valor_restante:
+        form.add_error(None, "A soma das parcelas precisa ser igual ao valor restante.")
+        houve_erro = True
+
+    return [] if houve_erro else sorted(parcelas, key=lambda item: item["numero"])
+
+
+def parcelas_para_formulario(evento=None, request=None):
+    if request and request.method == "POST":
+        numeros = request.POST.getlist("parcela_numero")
+        valores = request.POST.getlist("parcela_valor")
+        vencimentos = request.POST.getlist("parcela_vencimento")
+        return [
+            {
+                "numero": numeros[indice] if indice < len(numeros) else indice + 1,
+                "valor": valores[indice] if indice < len(valores) else "",
+                "vencimento": vencimentos[indice] if indice < len(vencimentos) else "",
+            }
+            for indice in range(max(len(numeros), len(valores), len(vencimentos), 1))
+        ]
+    if evento and evento.venda_id:
+        return [
+            {
+                "numero": parcela.numero,
+                "valor": f"{parcela.valor:.2f}".replace(".", ","),
+                "vencimento": parcela.vencimento.isoformat(),
+            }
+            for parcela in evento.venda.parcelas.all()
+        ]
+    return [{"numero": 1, "valor": "", "vencimento": ""}]
+
+
+def aplicar_parcelas_evento(evento, parcelas):
+    if not evento.venda_id or not parcelas:
+        return
+    venda = evento.venda
+    hoje = timezone.localdate()
+    parcelas_mantidas = []
+    for item in parcelas:
+        parcela = venda.parcelas.filter(numero=item["numero"]).first() or Parcela(venda=venda, numero=item["numero"])
+        parcela.valor = item["valor"]
+        parcela.vencimento = item["vencimento"]
+        parcela.lembrete_em = item["vencimento"]
+        parcela.status = "pago" if evento.pagamento_recebido else "pendente"
+        parcela.data_pagamento = hoje if parcela.status == "pago" else None
+        parcela.observacoes = "Informada no formulario de contrato do evento."
+        parcela.save()
+        parcelas_mantidas.append(parcela.pk)
+    venda.parcelas.exclude(pk__in=parcelas_mantidas).delete()
+    venda.quantidade_parcelas = len(parcelas)
+    venda.condicao_pagamento = "parcelado" if len(parcelas) > 1 else "avista"
+    venda.valor_total = evento.valor_cobrado
+    venda.status = "pago" if evento.pagamento_recebido else "pendente"
+    venda.save(update_fields=["quantidade_parcelas", "condicao_pagamento", "valor_total", "status", "atualizado_em"])
+
+
 def eventos(request):
     busca = request.GET.get("q", "").strip()
     eventos_qs = Evento.objects.select_related("cliente", "venda").prefetch_related("venda__parcelas", "documentos")
@@ -1008,8 +1205,18 @@ def relatorios(request):
 def evento_form(request, pk=None):
     evento = get_object_or_404(Evento, pk=pk) if pk else None
     form = EventoForm(request.POST or None, instance=evento)
+    parcelas_form = parcelas_para_formulario(evento, request)
+    parcelas_post = []
     if request.method == "POST" and form.is_valid():
+        parcelas_post = parcelas_do_request(request, form)
+    if request.method == "POST" and form.is_valid() and parcelas_post:
+        criando_evento = evento is None
         evento = form.save()
+        aplicar_parcelas_evento(evento, parcelas_post)
+        documento_criado = getattr(form, "documento_criado", None)
+        if criando_evento and documento_criado:
+            messages.success(request, "Evento salvo e contrato gerado automaticamente.")
+            return redirect("eventos")
         messages.success(request, "Evento salvo com sucesso.")
         if request.GET.get("proximo") == "cliente" and evento.cliente_id:
             oportunidade_id = request.GET.get("oportunidade")
@@ -1018,7 +1225,22 @@ def evento_form(request, pk=None):
             messages.success(request, "Cliente criado ou atualizado a partir do evento.")
             return redirect("cliente_editar", pk=evento.cliente_id)
         return redirect("eventos")
-    return render(request, "crm/form.html", {"form": form, "titulo": "Evento", "voltar": "eventos"})
+    contrato_preview_template = CONTRATO_FESTA_INFANTIL_TEMPLATE
+    if evento:
+        documento = evento.documentos.order_by("-criado_em").first()
+        if documento and documento.conteudo_contrato:
+            contrato_preview_template = documento.conteudo_contrato
+    return render(
+        request,
+        "crm/evento_form.html",
+        {
+            "form": form,
+            "titulo": "Evento",
+            "voltar": "eventos",
+            "contrato_preview_template": contrato_preview_template,
+            "parcelas_form": parcelas_form,
+        },
+    )
 
 
 def evento_excluir(request, pk):
@@ -1066,12 +1288,12 @@ def clientes_exportar_planilha(request):
 
 def clientes_importar_planilha(request):
     if request.method != "POST":
-        return redirect("documentos")
+        return redirect("clientes")
 
     arquivo = request.FILES.get("planilha")
     if not arquivo:
         messages.error(request, "Selecione uma planilha para importar.")
-        return redirect("documentos")
+        return redirect("clientes")
 
     try:
         if arquivo.name.lower().endswith(".csv"):
@@ -1080,65 +1302,69 @@ def clientes_importar_planilha(request):
             linhas = ler_linhas_xlsx(arquivo)
         else:
             messages.error(request, "Envie uma planilha .xlsx ou .csv.")
-            return redirect("documentos")
+            return redirect("clientes")
     except (OSError, UnicodeDecodeError, zipfile.BadZipFile, ET.ParseError, KeyError, IndexError) as exc:
         messages.error(request, f"Nao foi possivel ler a planilha: {exc}")
-        return redirect("documentos")
+        return redirect("clientes")
 
     if not linhas:
         messages.warning(request, "A planilha esta vazia.")
-        return redirect("documentos")
+        return redirect("clientes")
 
     cabecalho = [normalizar_cabecalho(coluna) for coluna in linhas[0]]
     campos_por_rotulo = {normalizar_cabecalho(rotulo): campo for campo, rotulo in CLIENTE_PLANILHA_CAMPOS}
     indices = {campos_por_rotulo[nome]: indice for indice, nome in enumerate(cabecalho) if nome in campos_por_rotulo}
     if "nome" not in indices:
         messages.error(request, "A planilha precisa ter uma coluna Nome.")
-        return redirect("documentos")
+        return redirect("clientes")
 
     criados = 0
     atualizados = 0
     ignorados = 0
-    for linha in linhas[1:]:
-        dados = {}
-        for campo, indice in indices.items():
-            dados[campo] = linha[indice].strip() if indice < len(linha) and linha[indice] is not None else ""
-        nome = dados.get("nome", "").strip()
-        if not nome:
-            ignorados += 1
-            continue
+    with transaction.atomic():
+        for linha in linhas[1:]:
+            dados = {}
+            for campo, indice in indices.items():
+                dados[campo] = linha[indice].strip() if indice < len(linha) and linha[indice] is not None else ""
+            nome = dados.get("nome", "").strip()
+            if not nome:
+                ignorados += 1
+                continue
 
-        cliente = None
-        email = dados.get("email", "").strip()
-        if email:
-            cliente = Cliente.objects.filter(email__iexact=email).first()
-        if not cliente:
-            cliente = Cliente.objects.filter(nome__iexact=nome).first()
+            cliente = None
+            email = dados.get("email", "").strip()
+            if email:
+                cliente = Cliente.objects.filter(email__iexact=email).first()
+            if not cliente:
+                cliente = Cliente.objects.filter(nome__iexact=nome).first()
 
-        valores = {
-            "nome": nome,
-            "telefone": dados.get("telefone", ""),
-            "email": email,
-            "origem": dados.get("origem", ""),
-            "tipo_evento": dados.get("tipo_evento", ""),
-            "data_evento": ler_data_planilha(dados.get("data_evento", "")),
-            "proxima_oportunidade": ler_data_planilha(dados.get("proxima_oportunidade", "")),
-            "observacoes": dados.get("observacoes", ""),
-        }
-        if cliente:
-            for campo, valor in valores.items():
-                setattr(cliente, campo, valor)
-            cliente.save()
-            atualizados += 1
-        else:
-            Cliente.objects.create(**valores)
-            criados += 1
+            data_evento = ler_data_planilha(dados.get("data_evento", ""))
+            proxima_oportunidade = calcular_proxima_oportunidade(data_evento)
+
+            valores = {
+                "nome": nome,
+                "telefone": dados.get("telefone", ""),
+                "email": email,
+                "origem": dados.get("origem", ""),
+                "tipo_evento": dados.get("tipo_evento", ""),
+                "data_evento": data_evento,
+                "proxima_oportunidade": proxima_oportunidade,
+                "observacoes": dados.get("observacoes", ""),
+            }
+            if cliente:
+                for campo, valor in valores.items():
+                    setattr(cliente, campo, valor)
+                cliente.save()
+                atualizados += 1
+            else:
+                Cliente.objects.create(**valores)
+                criados += 1
 
     messages.success(
         request,
         f"Planilha importada: {criados} clientes criados, {atualizados} atualizados e {ignorados} linhas ignoradas.",
     )
-    return redirect("documentos")
+    return redirect("clientes")
 
 
 def documento_form(request, pk=None):
@@ -1170,10 +1396,12 @@ def documento_form(request, pk=None):
             documento.status = "assinado"
             if not documento.assinado_em:
                 documento.assinado_em = timezone.localdate()
+        elif documento.status == "rascunho":
+            documento.status = "pendente"
         documento.save()
-        messages.success(request, "Documento salvo e anexado ao evento com sucesso.")
+        messages.success(request, "Documento salvo. Agora ele pode ser enviado ao cliente.")
         return redirect("documentos")
-    return render(request, "crm/form.html", {"form": form, "titulo": "Documento", "voltar": "documentos"})
+    return render(request, "crm/documento_form.html", {"form": form, "documento": documento})
 
 
 def documento_excluir(request, pk):
@@ -1193,6 +1421,9 @@ def documento_enviar(request, pk):
     if documento.status == "assinado":
         messages.warning(request, "Documento ja esta marcado como assinado. Envio nao realizado.")
         return redirect("documentos")
+    if documento.status == "rascunho":
+        messages.warning(request, "Revise e salve o contrato antes de enviar ao cliente.")
+        return redirect("documento_editar", pk=documento.pk)
 
     if documento.cliente:
         if not documento.contato_whatsapp:
@@ -1232,6 +1463,9 @@ def documento_enviar(request, pk):
 
 def documento_whatsapp_manual(request, pk):
     documento = get_object_or_404(Documento, pk=pk)
+    if documento.status == "rascunho":
+        messages.warning(request, "Revise e salve o contrato antes de abrir o lembrete pelo WhatsApp.")
+        return redirect("documento_editar", pk=documento.pk)
     if documento.cliente:
         if not documento.contato_whatsapp:
             documento.contato_whatsapp = documento.cliente.telefone

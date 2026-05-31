@@ -4,6 +4,9 @@
 {% block page_subtitle %}Preencha os dados e salve para atualizar o banco.{% endblock %}
 
 {% block content %}
+{% if contrato_preview_template %}
+<div class="event-contract-layout">
+{% endif %}
 <section class="form-panel">
   <form method="post" enctype="multipart/form-data" novalidate>
     {% csrf_token %}
@@ -37,6 +40,17 @@
     </div>
   </form>
 </section>
+{% if contrato_preview_template %}
+  <aside class="form-panel event-contract-preview-panel" aria-label="Previa do contrato">
+    <div class="panel-head">
+      <h2>Previa do contrato</h2>
+      <span class="badge rascunho">Ao vivo</span>
+    </div>
+    <pre class="contract-preview" data-contract-preview></pre>
+  </aside>
+</div>
+{{ contrato_preview_template|json_script:"contrato-preview-template" }}
+{% endif %}
 
 <script>
   window.addEventListener("DOMContentLoaded", function () {
@@ -134,6 +148,120 @@
     if (etapa) etapa.addEventListener("change", alternarValoresOportunidade);
     if (dataEvento) dataEvento.addEventListener("change", preencherProximaOportunidade);
     if (nome) nome.addEventListener("change", preencherContato);
+
+    const contratoTemplateNode = document.getElementById("contrato-preview-template");
+    const contratoPreview = document.querySelector("[data-contract-preview]");
+    const contratoTemplate = contratoTemplateNode ? JSON.parse(contratoTemplateNode.textContent) : "";
+
+    function valorCampo(id) {
+      const campo = document.getElementById(id);
+      if (!campo) return "";
+      if (campo.type === "checkbox") return campo.checked ? "Sim" : "Nao";
+      return campo.value || "";
+    }
+
+    function textoSelect(id) {
+      const campo = document.getElementById(id);
+      if (!campo || !campo.options || campo.selectedIndex < 0) return valorCampo(id);
+      return campo.options[campo.selectedIndex].text || campo.value || "";
+    }
+
+    function dataBR(valor) {
+      if (!valor) return "";
+      const partes = valor.split("-");
+      if (partes.length !== 3) return valor;
+      return `${partes[2]}/${partes[1]}/${partes[0]}`;
+    }
+
+    function moedaBR(valor) {
+      const normalizado = String(valor || "").trim().replace(/\./g, "").replace(",", ".");
+      const numero = Number(normalizado);
+      if (!Number.isFinite(numero)) return valor || "";
+      return numero.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function numeroMoeda(valor) {
+      const numero = Number(String(valor || "0").trim().replace(/\./g, "").replace(",", "."));
+      return Number.isFinite(numero) ? numero : 0;
+    }
+
+    function addMeses(data, meses) {
+      const resultado = new Date(data.getFullYear(), data.getMonth() + meses, 1);
+      const ultimoDia = new Date(resultado.getFullYear(), resultado.getMonth() + 1, 0).getDate();
+      resultado.setDate(Math.min(data.getDate(), ultimoDia));
+      return resultado;
+    }
+
+    function dataParcelaBR(indice) {
+      const primeira = valorCampo("id_primeira_parcela") || valorCampo("id_data_festa");
+      if (!primeira) return "____/____/____";
+      const partes = primeira.split("-").map(Number);
+      const data = addMeses(new Date(partes[0], partes[1] - 1, partes[2]), indice);
+      return dataBR(formatarDataInput(data));
+    }
+
+    function parcelasContrato() {
+      const quantidade = Math.max(parseInt(valorCampo("id_quantidade_parcelas") || "1", 10) || 1, 1);
+      const total = numeroMoeda(valorCampo("id_valor_cobrado"));
+      const valorBase = quantidade ? total / quantidade : total;
+      const linhas = [];
+      for (let indice = 0; indice < quantidade; indice += 1) {
+        linhas.push(`${indice + 1}a Parcela - Valor R$ ${moedaBR(String(valorBase.toFixed(2)))} - Data ${dataParcelaBR(indice)}`);
+      }
+      return linhas.join("\n");
+    }
+
+    function hojeBR() {
+      const hoje = new Date();
+      return dataBR(formatarDataInput(hoje));
+    }
+
+    function atualizarPreviewContrato() {
+      if (!contratoPreview || !contratoTemplate) return;
+      const valorTotal = numeroMoeda(valorCampo("id_valor_cobrado"));
+      const adiantamento = numeroMoeda(valorCampo("id_adiantamento"));
+      const autoriza = Boolean(document.getElementById("id_autoriza_uso_imagem")?.checked);
+      const contexto = {
+        cliente_nome: valorCampo("id_nome"),
+        cliente_contato: [valorCampo("id_contato"), valorCampo("id_email")].filter(Boolean).join(" / "),
+        cliente_cpf: valorCampo("id_cpf_contratante"),
+        cliente_endereco: valorCampo("id_endereco_contratante"),
+        cliente_telefone: valorCampo("id_contato"),
+        cliente_email: valorCampo("id_email"),
+        aniversariante: valorCampo("id_aniversariante") || valorCampo("id_nome"),
+        idade: valorCampo("id_idade"),
+        local_evento: valorCampo("id_local_evento"),
+        data_evento: dataBR(valorCampo("id_data_festa")),
+        horario_inicio: valorCampo("id_horario"),
+        horario_fim: valorCampo("id_horario_fim"),
+        servico: valorCampo("id_descricao_servico") || valorCampo("id_tipo_evento"),
+        valor: moedaBR(valorCampo("id_valor_cobrado")),
+        forma_pagamento: textoSelect("id_forma_pagamento"),
+        parcelas: parcelasContrato(),
+        adiantamento: moedaBR(valorCampo("id_adiantamento")),
+        restante: moedaBR(String(Math.max(valorTotal - adiantamento, 0).toFixed(2))),
+        autoriza_uso_imagem_sim: autoriza ? " X " : "   ",
+        autoriza_uso_imagem_nao: autoriza ? "   " : " X ",
+        data_contrato: hojeBR(),
+      };
+      let texto = contratoTemplate;
+      const tagInicio = "{" + "{";
+      const tagFim = "}" + "}";
+      Object.entries(contexto).forEach(([chave, valor]) => {
+        texto = texto
+          .replaceAll(`${tagInicio} ${chave} ${tagFim}`, valor)
+          .replaceAll(`${tagInicio}${chave}${tagFim}`, valor);
+      });
+      contratoPreview.textContent = texto;
+    }
+
+    if (contratoPreview) {
+      document.querySelectorAll("input, select, textarea").forEach((campo) => {
+        campo.addEventListener("input", atualizarPreviewContrato);
+        campo.addEventListener("change", atualizarPreviewContrato);
+      });
+      atualizarPreviewContrato();
+    }
   });
 </script>
 {% endblock %}

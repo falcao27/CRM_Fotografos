@@ -58,7 +58,7 @@ Em caso de desistencia, nao sera devolvido o adiantamento pago.
 
 O CONTRATANTE autoriza a utilizacao de sua imagem pelo CONTRATADO em seu portfolio ou redes sociais exclusivamente para fins de divulgacao de seu trabalho e sem fins comerciais.
 
-(    ) SIM         (    ) NAO
+({{ autoriza_uso_imagem_sim }}) SIM         ({{ autoriza_uso_imagem_nao }}) NAO
 
 E por estarem justos e contratados, firmam o presente instrumento em duas vias iguais.
 
@@ -324,14 +324,22 @@ class Evento(models.Model):
     tipo_evento = models.CharField(max_length=100, choices=TIPO_CHOICES, blank=True)
     data_festa = models.DateField(null=True, blank=True)
     horario = models.TimeField(null=True, blank=True)
+    horario_fim = models.TimeField(null=True, blank=True)
     contato = models.CharField(max_length=80, blank=True)
+    cpf_contratante = models.CharField(max_length=20, blank=True)
+    endereco_contratante = models.CharField(max_length=220, blank=True)
+    aniversariante = models.CharField(max_length=160, blank=True)
+    idade = models.CharField(max_length=30, blank=True)
     local_evento = models.CharField(max_length=180, blank=True)
     em_buffet = models.BooleanField(default=False)
+    descricao_servico = models.TextField(blank=True)
     valor_cobrado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     forma_pagamento = models.CharField(max_length=20, choices=Venda.FORMA_CHOICES, default="pix")
     pagamento_recebido = models.BooleanField(default=False)
     quantidade_parcelas = models.PositiveIntegerField(default=1)
     primeira_parcela = models.DateField(null=True, blank=True)
+    adiantamento = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    autoriza_uso_imagem = models.BooleanField(default=True)
     observacoes = models.TextField(blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
@@ -441,7 +449,7 @@ class Documento(models.Model):
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, related_name="documentos")
     evento = models.ForeignKey(Evento, on_delete=models.SET_NULL, null=True, blank=True, related_name="documentos")
     titulo = models.CharField(max_length=160)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pendente")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="rascunho")
     contato_whatsapp = models.CharField(max_length=30, blank=True)
     contato_email = models.EmailField(blank=True)
     forma_envio = models.CharField(max_length=20, choices=ENVIO_CHOICES, default="ambos")
@@ -478,10 +486,17 @@ class Documento(models.Model):
         valor = ""
         forma_pagamento = ""
         parcelas = ""
+        adiantamento = ""
+        restante = ""
         if evento:
-            servico = evento.get_tipo_evento_display() if evento.tipo_evento else evento.nome
+            servico = evento.descricao_servico or (evento.get_tipo_evento_display() if evento.tipo_evento else evento.nome)
             valor = f"{evento.valor_cobrado:.2f}".replace(".", ",")
             forma_pagamento = evento.get_forma_pagamento_display()
+            if evento.adiantamento:
+                adiantamento = f"{evento.adiantamento:.2f}".replace(".", ",")
+            if evento.valor_cobrado:
+                restante_valor = max(evento.valor_cobrado - evento.adiantamento, Decimal("0.00"))
+                restante = f"{restante_valor:.2f}".replace(".", ",")
             if evento.venda_id:
                 parcelas = "\n".join(
                     f"{parcela.numero}a Parcela - Valor R$ {parcela.valor:.2f} - Data {parcela.vencimento:%d/%m/%Y}".replace(".", ",")
@@ -494,22 +509,24 @@ class Documento(models.Model):
         contexto = {
             "cliente_nome": cliente_nome,
             "cliente_contato": cliente_contato,
-            "cliente_cpf": "",
-            "cliente_endereco": "",
+            "cliente_cpf": evento.cpf_contratante if evento else "",
+            "cliente_endereco": evento.endereco_contratante if evento else "",
             "cliente_telefone": self.contato_whatsapp or (self.cliente.telefone if self.cliente else ""),
             "cliente_email": self.contato_email or (self.cliente.email if self.cliente else ""),
             "servico": servico,
             "valor": valor,
             "data_evento": data_evento,
-            "aniversariante": evento.nome if evento else cliente_nome,
-            "idade": "",
+            "aniversariante": (evento.aniversariante or evento.nome) if evento else cliente_nome,
+            "idade": evento.idade if evento else "",
             "local_evento": evento.local_evento if evento else "",
             "horario_inicio": evento.horario.strftime("%H:%M") if evento and evento.horario else "",
-            "horario_fim": "",
+            "horario_fim": evento.horario_fim.strftime("%H:%M") if evento and evento.horario_fim else "",
             "forma_pagamento": forma_pagamento,
             "parcelas": parcelas,
-            "adiantamento": "",
-            "restante": "",
+            "adiantamento": adiantamento,
+            "restante": restante,
+            "autoriza_uso_imagem_sim": " X " if evento and evento.autoriza_uso_imagem else "   ",
+            "autoriza_uso_imagem_nao": "   " if evento and evento.autoriza_uso_imagem else " X ",
             "data_contrato": timezone.localdate().strftime("%d/%m/%Y"),
         }
         texto = self.conteudo_contrato

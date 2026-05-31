@@ -5,14 +5,7 @@
 
 {% block content %}
 <section class="toolbar">
-  <div class="toolbar-actions">
-    <a class="button ghost" href="{% url 'clientes_exportar_planilha' %}"><i data-lucide="download"></i>Exportar clientes</a>
-    <form class="import-form" method="post" action="{% url 'clientes_importar_planilha' %}" enctype="multipart/form-data">
-      {% csrf_token %}
-      <label class="button ghost" for="planilha-clientes"><i data-lucide="upload"></i>Importar clientes</label>
-      <input id="planilha-clientes" type="file" name="planilha" accept=".xlsx,.csv" onchange="this.form.submit()">
-    </form>
-  </div>
+  <span></span>
   <a class="button" href="{% url 'documento_novo' %}"><i data-lucide="plus"></i>Novo documento</a>
 </section>
 
@@ -46,13 +39,21 @@
               {% endif %}
             </td>
             <td class="actions">
-              <form class="inline-form" method="post" action="{% url 'documento_enviar' documento.pk %}">
-                {% csrf_token %}
-                <button class="icon-link" type="submit" title="Enviar documento real"><i data-lucide="send"></i></button>
-              </form>
-              <a class="icon-link" href="{% url 'documento_pdf' documento.pk %}" target="_blank" rel="noopener" title="Abrir PDF"><i data-lucide="file-text"></i></a>
-              <a class="icon-link" href="{% url 'documento_pdf' documento.pk %}?download=1" title="Baixar PDF"><i data-lucide="download"></i></a>
-              <a class="icon-link" href="{% url 'documento_whatsapp_manual' documento.pk %}" target="_blank" rel="noopener" title="Abrir WhatsApp com mensagem pronta"><i data-lucide="message-circle"></i></a>
+              {% if documento.status == "rascunho" %}
+                <a class="icon-link" href="{% url 'documento_editar' documento.pk %}" title="Revisar contrato antes de enviar"><i data-lucide="file-pen-line"></i></a>
+              {% else %}
+                <form class="inline-form" method="post" action="{% url 'documento_enviar' documento.pk %}">
+                  {% csrf_token %}
+                  <button class="icon-link" type="submit" title="Enviar documento real"><i data-lucide="send"></i></button>
+                </form>
+              {% endif %}
+              <a class="icon-link" href="{% url 'documento_pdf' documento.pk %}" target="_blank" rel="noopener" title="Visualizar contrato"><i data-lucide="file-text"></i></a>
+              {% if documento.arquivo_assinado %}
+                <a class="icon-link" href="{{ documento.arquivo_assinado.url }}" target="_blank" rel="noopener" title="Visualizar contrato assinado"><i data-lucide="badge-check"></i></a>
+              {% endif %}
+              {% if documento.status != "rascunho" %}
+                <a class="icon-link" href="{% url 'documento_whatsapp_manual' documento.pk %}" target="_blank" rel="noopener" title="Abrir WhatsApp com mensagem pronta"><i data-lucide="message-circle"></i></a>
+              {% endif %}
               <a class="icon-link" href="{% url 'documento_editar' documento.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
               <a class="icon-link danger" href="{% url 'documento_excluir' documento.pk %}" title="Excluir"><i data-lucide="trash-2"></i></a>
             </td>

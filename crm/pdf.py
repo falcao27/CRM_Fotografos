@@ -357,22 +357,26 @@ def desenhar_assinatura(canvas, ctx):
 
 
 def gerar_pdf_documento(documento):
-    ctx = contexto_contrato(documento)
     logo = carregar_png_rgb(LOGO_PATH)
     canvas = PdfCanvas(tem_logo=bool(logo))
-
-    canvas.add_page()
-    desenhar_cabecalho(canvas, ctx)
-    y = tabela_servico(canvas, ctx)
-    y = parcelas_texto(canvas, ctx, y)
-    y = tabela_adiantamento(canvas, y)
-    desenhar_clausulas(canvas, CLAUSULAS_PAGINA_1, y, bottom=56)
+    texto_contrato = documento.contrato_renderizado()
 
     canvas.add_page()
     desenhar_marca(canvas)
-    canvas.text(240, 728, "CONTRATO DE SERVICO", size=12, font="F2")
-    desenhar_clausulas(canvas, CLAUSULAS_PAGINA_2, 696, bottom=220)
-    desenhar_assinatura(canvas, ctx)
+    canvas.text(230, 728, "CONTRATO DE SERVICO", size=12, font="F2")
+    y = 700
+    for bloco in texto_contrato.splitlines():
+        linhas = wrap(bloco, width=108) or [""]
+        for linha in linhas:
+            if y < 58:
+                canvas.add_page()
+                desenhar_marca(canvas)
+                canvas.text(230, 728, "CONTRATO DE SERVICO", size=12, font="F2")
+                y = 700
+            canvas.text(45, y, linha, size=8)
+            y -= 11
+        if bloco.strip():
+            y -= 3
     canvas.finish()
 
     objetos = [
@@ -431,3 +435,90 @@ def gerar_pdf_documento(documento):
 def nome_pdf_documento(documento):
     base = "".join(ch if ch.isalnum() else "_" for ch in documento.titulo.lower()).strip("_")
     return f"{base or 'contrato'}.pdf"
+
+
+def gerar_pdf_relatorio_despesas(titulo, despesas, total):
+    canvas = PdfCanvas()
+    canvas.add_page()
+    y = 790
+    canvas.text(45, y, titulo, size=15, font="F2")
+    y -= 24
+    canvas.text(45, y, f"Total do periodo: R$ {brl(total)}", size=10, font="F2")
+    y -= 26
+
+    cabecalho = ["Descricao", "Categoria", "Data", "Vencimento", "Pagamento", "Status", "Valor"]
+    larguras = [150, 82, 58, 70, 72, 58, 56]
+    x = 45
+    for label, largura in zip(cabecalho, larguras):
+        canvas.text(x, y, label, size=7, font="F2")
+        x += largura
+    y -= 10
+    canvas.line(45, y, 550, y)
+    y -= 14
+
+    for despesa in despesas:
+        if y < 62:
+            canvas.add_page()
+            y = 790
+            canvas.text(45, y, titulo, size=13, font="F2")
+            y -= 26
+
+        valores = [
+            despesa.descricao,
+            despesa.categoria or "Sem categoria",
+            data_br(despesa.data),
+            data_br(despesa.vencimento),
+            despesa.get_forma_pagamento_display(),
+            despesa.get_status_display(),
+            f"R$ {brl(despesa.valor)}",
+        ]
+        x = 45
+        for valor, largura in zip(valores, larguras):
+            texto = str(valor or "")
+            if len(texto) > 24:
+                texto = texto[:21] + "..."
+            canvas.text(x, y, texto, size=7)
+            x += largura
+        y -= 15
+
+    canvas.finish()
+
+    objetos = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique >>",
+    ]
+    page_refs = []
+    for page_commands in canvas.pages:
+        page_obj = len(objetos) + 1
+        content_obj = page_obj + 1
+        page_refs.append(f"{page_obj} 0 R")
+        stream = "\n".join(page_commands).encode("latin-1", errors="replace")
+        objetos.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PAGE_WIDTH} {PAGE_HEIGHT}] "
+            f"/Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents {content_obj} 0 R >>"
+        )
+        objetos.append(f"<< /Length {len(stream)} >>\nstream\n{stream.decode('latin-1')}\nendstream")
+    objetos[1] = f"<< /Type /Pages /Kids [{' '.join(page_refs)}] /Count {len(page_refs)} >>"
+
+    partes = [b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n"]
+    offsets = [0]
+    for indice, objeto in enumerate(objetos, start=1):
+        offsets.append(sum(len(parte) for parte in partes))
+        partes.append(f"{indice} 0 obj\n{objeto}\nendobj\n".encode("latin-1", errors="replace"))
+
+    xref_inicio = sum(len(parte) for parte in partes)
+    xref = ["xref", f"0 {len(objetos) + 1}", "0000000000 65535 f "]
+    for offset in offsets[1:]:
+        xref.append(f"{offset:010d} 00000 n ")
+    xref.append(
+        "trailer\n"
+        f"<< /Size {len(objetos) + 1} /Root 1 0 R >>\n"
+        "startxref\n"
+        f"{xref_inicio}\n"
+        "%%EOF\n"
+    )
+    partes.append("\n".join(xref).encode("latin-1", errors="replace"))
+    return b"".join(partes)

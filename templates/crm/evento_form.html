@@ -1,0 +1,502 @@
+{% extends "base.html" %}
+
+{% block page_title %}Contrato do evento{% endblock %}
+{% block page_subtitle %}Preencha os dados do contrato e confira o documento em tempo real.{% endblock %}
+
+{% block content %}
+<form class="contract-workspace" method="post" enctype="multipart/form-data" novalidate data-contract-form>
+  {% csrf_token %}
+
+  <section class="contract-intake">
+    <div class="contract-intake-head">
+      <div>
+        <span>Cadastro contratual</span>
+        <h2>Informacoes para fechamento</h2>
+      </div>
+      <a class="button ghost" href="{% url voltar %}"><i data-lucide="arrow-left"></i>Voltar</a>
+    </div>
+
+    <div class="contract-form-sections">
+      {% if form.non_field_errors %}
+        <div class="message danger-message">
+          {% for error in form.non_field_errors %}{{ error }}{% if not forloop.last %}<br>{% endif %}{% endfor %}
+        </div>
+      {% endif %}
+
+      <fieldset class="contract-fieldset">
+        <legend>Contratante</legend>
+        <div class="contract-fields two">
+          <label>
+            <span>{{ form.nome.label }}</span>
+            {{ form.nome }}
+            {% if form.clientes_opcoes %}
+              <datalist id="clientes-cadastrados">
+                {% for cliente in form.clientes_opcoes %}
+                  <option value="{{ cliente.nome }}" label="{% if cliente.telefone %}{{ cliente.telefone }}{% else %}Cliente cadastrado{% endif %}"></option>
+                {% endfor %}
+              </datalist>
+            {% endif %}
+            {% for error in form.nome.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label>
+            <span>{{ form.cpf_contratante.label }}</span>
+            {{ form.cpf_contratante }}
+            {% for error in form.cpf_contratante.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label>
+            <span>{{ form.contato.label }}</span>
+            {{ form.contato }}
+            {% for error in form.contato.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label>
+            <span>{{ form.email.label }}</span>
+            {{ form.email }}
+            {% for error in form.email.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label class="wide">
+            <span>{{ form.endereco_contratante.label }}</span>
+            {{ form.endereco_contratante }}
+            {% for error in form.endereco_contratante.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="contract-fieldset">
+        <legend>Evento</legend>
+        <div class="contract-fields three">
+          <label>
+            <span>{{ form.aniversariante.label }}</span>
+            {{ form.aniversariante }}
+            {% for error in form.aniversariante.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label>
+            <span>{{ form.idade.label }}</span>
+            {{ form.idade }}
+            {% for error in form.idade.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label>
+            <span>{{ form.tipo_evento.label }}</span>
+            {{ form.tipo_evento }}
+            {% if form.tipo_evento_opcoes %}
+              <datalist id="tipos-evento-cadastrados">
+                {% for tipo_evento in form.tipo_evento_opcoes %}
+                  <option value="{{ tipo_evento }}"></option>
+                {% endfor %}
+              </datalist>
+            {% endif %}
+            {% for error in form.tipo_evento.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label>
+            <span>{{ form.data_festa.label }}</span>
+            {{ form.data_festa }}
+            {% for error in form.data_festa.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label>
+            <span>{{ form.horario.label }}</span>
+            {{ form.horario }}
+            {% for error in form.horario.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label>
+            <span>{{ form.horario_fim.label }}</span>
+            {{ form.horario_fim }}
+            {% for error in form.horario_fim.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label class="wide">
+            <span>{{ form.local_evento.label }}</span>
+            {{ form.local_evento }}
+            {% for error in form.local_evento.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label class="toggle-line">
+            {{ form.em_buffet }}
+            <span>{{ form.em_buffet.label }}</span>
+            {% for error in form.em_buffet.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="contract-fieldset">
+        <legend>Servico contratado</legend>
+        <div class="contract-fields">
+          <label class="wide">
+            <span>{{ form.descricao_servico.label }}</span>
+            {{ form.descricao_servico }}
+            {% for error in form.descricao_servico.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="contract-fieldset">
+        <legend>Pagamento</legend>
+        <div class="contract-fields three">
+          <label>
+            <span>{{ form.valor_cobrado.label }}</span>
+            {{ form.valor_cobrado }}
+            {% for error in form.valor_cobrado.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label>
+            <span>{{ form.adiantamento.label }}</span>
+            {{ form.adiantamento }}
+            {% for error in form.adiantamento.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label>
+            <span>Valor restante</span>
+            <input type="text" id="id_valor_restante_contrato" value="" readonly>
+          </label>
+          <label>
+            <span>{{ form.forma_pagamento.label }}</span>
+            {{ form.forma_pagamento }}
+            {% for error in form.forma_pagamento.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label class="conditional-field" data-field="quantidade-parcelas">
+            <span>{{ form.quantidade_parcelas.label }}</span>
+            {{ form.quantidade_parcelas }}
+            {% for error in form.quantidade_parcelas.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label class="conditional-field" data-field="primeira-parcela">
+            <span>{{ form.primeira_parcela.label }}</span>
+            {{ form.primeira_parcela }}
+            {% for error in form.primeira_parcela.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label class="toggle-line">
+            {{ form.pagamento_recebido }}
+            <span>{{ form.pagamento_recebido.label }}</span>
+            {% for error in form.pagamento_recebido.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <div class="parcel-editor wide">
+            <div class="parcel-editor-head">
+              <span>Parcelas do contrato</span>
+              <small>Informe numero, valor e vencimento de cada parcela.</small>
+            </div>
+            <div class="parcel-table" data-parcel-table>
+              <div class="parcel-row parcel-row-head">
+                <span>Numero da parcela</span>
+                <span>Valor da parcela</span>
+                <span>Data de vencimento</span>
+              </div>
+              <div data-parcel-rows>
+                {% for parcela in parcelas_form %}
+                  <div class="parcel-row" data-parcel-row>
+                    <input type="number" name="parcela_numero" min="1" value="{{ parcela.numero }}" aria-label="Numero da parcela">
+                    <input type="text" name="parcela_valor" inputmode="decimal" value="{{ parcela.valor }}" placeholder="0,00" aria-label="Valor da parcela">
+                    <input type="date" name="parcela_vencimento" value="{{ parcela.vencimento }}" aria-label="Data de vencimento da parcela">
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="contract-fieldset">
+        <legend>Autorizacao e observacoes</legend>
+        <div class="contract-fields two">
+          <label class="toggle-line">
+            {{ form.autoriza_uso_imagem }}
+            <span>{{ form.autoriza_uso_imagem.label }}</span>
+            {% for error in form.autoriza_uso_imagem.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label class="wide">
+            <span>{{ form.observacoes.label }}</span>
+            {{ form.observacoes }}
+            {% for error in form.observacoes.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="contract-savebar">
+      <button class="button" type="submit"><i data-lucide="save"></i>Salvar e revisar contrato</button>
+    </div>
+  </section>
+
+  <aside class="contract-preview-panel" aria-label="Previa do contrato">
+    <div class="contract-preview-toolbar">
+      <div>
+        <span>Previa ao vivo</span>
+        <strong data-preview-title>Contrato de servico</strong>
+      </div>
+      <span class="badge rascunho">Rascunho</span>
+    </div>
+
+    <article class="contract-paper" data-contract-paper>
+      <header class="contract-paper-header">
+        <strong>JOAO BOSCO FOTOGRAFIA</strong>
+        <span>E-MAIL: JOAOBOSCOFOTOS@GMAIL.COM</span>
+        <span>TEL: (85) 98713-7641</span>
+        <span>CNPJ: 25.165.098/0001-68</span>
+      </header>
+
+      <h2>CONTRATO DE SERVICO</h2>
+
+      <dl class="contract-preview-grid">
+        <div><dt>CONTRATANTE</dt><dd data-preview="cliente_nome"></dd></div>
+        <div><dt>CPF</dt><dd data-preview="cliente_cpf"></dd></div>
+        <div class="wide"><dt>ENDERECO</dt><dd data-preview="cliente_endereco"></dd></div>
+        <div><dt>TELEFONE</dt><dd data-preview="cliente_telefone"></dd></div>
+        <div><dt>E-MAIL</dt><dd data-preview="cliente_email"></dd></div>
+        <div><dt>NOME DO ANIVERSARIANTE</dt><dd data-preview="aniversariante"></dd></div>
+        <div><dt>IDADE</dt><dd data-preview="idade"></dd></div>
+        <div class="wide"><dt>LOCAL</dt><dd data-preview="local_evento"></dd></div>
+        <div><dt>DATA</dt><dd data-preview="data_evento"></dd></div>
+        <div><dt>HORARIO</dt><dd><span data-preview="horario_inicio"></span> as <span data-preview="horario_fim"></span></dd></div>
+      </dl>
+
+      <section class="contract-preview-section">
+        <h3>DESCRICAO DO SERVICO</h3>
+        <p data-preview="servico"></p>
+      </section>
+
+      <section class="contract-preview-section compact">
+        <dl class="contract-preview-grid">
+          <div><dt>VALOR TOTAL</dt><dd>R$ <span data-preview="valor"></span></dd></div>
+          <div><dt>FORMA DE PAGAMENTO</dt><dd data-preview="forma_pagamento"></dd></div>
+          <div><dt>ADIANTAMENTO</dt><dd>R$ <span data-preview="adiantamento"></span></dd></div>
+          <div><dt>RESTANTE</dt><dd>R$ <span data-preview="restante"></span></dd></div>
+        </dl>
+        <h3>PARCELAS</h3>
+        <p class="parcel-preview" data-preview="parcelas"></p>
+      </section>
+
+      <section class="contract-preview-section clauses">
+        <p>OBS: PERMANENCIA DE ATE 03 HORAS NO EVENTO, INICIANDO A PARTIR DO HORARIO ESTABELECIDO ACIMA.</p>
+        <p>Sera executado um numero superior ao das fotos acima encomendadas, a fim de aumentar a opcao de escolha.</p>
+        <p>O CONTRATADO entregara o LINK com todas as fotos do evento para a escolha das imagens que irao para o album no prazo de 20 (vinte) dias uteis apos o evento. O CONTRATANTE tera o prazo de 10 (dez) dias uteis, apos o recebimento das provas, para informar ao CONTRATADO as fotos selecionadas para o album.</p>
+        <p>O CONTRATANTE tera um prazo de 12 meses, a contar a partir do recebimento das imagens, para informar a selecao de fotos que irao para o album. Caso ultrapasse o periodo estipulado, o valor sera reajustado de acordo com a tabela atual de precos.</p>
+        <p>O CONTRATANTE devera enviar, em documento escrito, para o CONTRATADO, a lista de fotos escolhidas, utilizando a numeracao e nomenclatura original dos arquivos de prova.</p>
+        <p>O CONTRATADO entregara os trabalhos, apos o evento, de acordo com as datas que seguem: fotos em LINK em 20 (vinte) dias uteis, sendo um LINK com 100 fotos tratadas e outro LINK com todas as imagens em alta resolucao; album em 45 (quarenta e cinco) dias uteis apos a devolucao das fotos ou projeto escolhido e aprovado pelo cliente.</p>
+        <p>Apos a entrega para verificacao e aprovacao do cliente, o mesmo tera 02 (dois) dias uteis para devolucao no caso de necessidade de correcao do projeto. Caso nao aconteca a devolucao no prazo estipulado, o produto final sera considerado aprovado pelo cliente.</p>
+        <p>O LINK com fotos em alta resolucao pertence a empresa, ficando a disposicao para novas reproducoes mediante remuneracao estabelecida entre cliente e empresa.</p>
+        <p>Os arquivos originais ficarao na empresa por 30 dias apos finalizar o contrato com o contratante.</p>
+        <p>Em caso de desistencia, nao sera devolvido o adiantamento pago.</p>
+        <p>O CONTRATANTE autoriza a utilizacao de sua imagem pelo CONTRATADO em seu portfolio ou redes sociais exclusivamente para fins de divulgacao de seu trabalho e sem fins comerciais.</p>
+      </section>
+
+      <section class="contract-preview-section signature">
+        <p>(<span data-preview="autoriza_uso_imagem_sim"></span>) SIM &nbsp;&nbsp;&nbsp;&nbsp; (<span data-preview="autoriza_uso_imagem_nao"></span>) NAO</p>
+        <p>E por estarem justos e contratados, firmam o presente instrumento em duas vias iguais.</p>
+        <p>Fortaleza, <span data-preview="data_contrato"></span></p>
+        <div class="signature-lines">
+          <span>ASSINATURA DO CLIENTE</span>
+          <span>JOAO BOSCO LISBOA DE MORAIS</span>
+        </div>
+      </section>
+    </article>
+  </aside>
+</form>
+
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    const nome = document.getElementById("id_nome");
+    const contato = document.getElementById("id_contato");
+    const email = document.getElementById("id_email");
+    const formaPagamento = document.getElementById("id_forma_pagamento");
+    const parcelas = document.querySelector('[data-field="quantidade-parcelas"]');
+    const primeiraParcela = document.querySelector('[data-field="primeira-parcela"]');
+    const quantidadeParcelas = document.getElementById("id_quantidade_parcelas");
+    const valorTotal = document.getElementById("id_valor_cobrado");
+    const vencimentoInicial = document.getElementById("id_primeira_parcela");
+    const parcelRows = document.querySelector("[data-parcel-rows]");
+    const clientes = {
+      {% if form.clientes_opcoes %}
+        {% for cliente in form.clientes_opcoes %}
+          "{{ cliente.nome|escapejs }}": {
+            telefone: "{{ cliente.telefone|escapejs }}",
+            email: "{{ cliente.email|escapejs }}"
+          }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+      {% endif %}
+    };
+
+    function campo(id) {
+      return document.getElementById(id);
+    }
+
+    function valor(id) {
+      const elemento = campo(id);
+      if (!elemento) return "";
+      return elemento.value || "";
+    }
+
+    function textoSelect(id) {
+      const elemento = campo(id);
+      if (!elemento || !elemento.options || elemento.selectedIndex < 0) return valor(id);
+      return elemento.options[elemento.selectedIndex].text || elemento.value || "";
+    }
+
+    function dataBR(valorData) {
+      if (!valorData) return "";
+      const partes = valorData.split("-");
+      if (partes.length !== 3) return valorData;
+      return `${partes[2]}/${partes[1]}/${partes[0]}`;
+    }
+
+    function formatarDataInput(data) {
+      const ano = data.getFullYear();
+      const mes = String(data.getMonth() + 1).padStart(2, "0");
+      const dia = String(data.getDate()).padStart(2, "0");
+      return `${ano}-${mes}-${dia}`;
+    }
+
+    function numeroMoeda(valorTexto) {
+      const numero = Number(String(valorTexto || "0").trim().replace(/\./g, "").replace(",", "."));
+      return Number.isFinite(numero) ? numero : 0;
+    }
+
+    function moedaBR(valorTexto) {
+      const numero = numeroMoeda(valorTexto);
+      return numero.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function addMeses(data, meses) {
+      const resultado = new Date(data.getFullYear(), data.getMonth() + meses, 1);
+      const ultimoDia = new Date(resultado.getFullYear(), resultado.getMonth() + 1, 0).getDate();
+      resultado.setDate(Math.min(data.getDate(), ultimoDia));
+      return resultado;
+    }
+
+    function dataParcelaBR(indice, valorData) {
+      if (!valorData) return "____/____/____";
+      return dataBR(valorData);
+    }
+
+    function parcelasContrato() {
+      const linhas = [];
+      document.querySelectorAll("[data-parcel-row]").forEach((linha, indice) => {
+        const numero = linha.querySelector('[name="parcela_numero"]')?.value || String(indice + 1);
+        const valorParcela = linha.querySelector('[name="parcela_valor"]')?.value || "0,00";
+        const vencimento = linha.querySelector('[name="parcela_vencimento"]')?.value || "";
+        linhas.push(`${numero}a Parcela - Valor R$ ${moedaBR(valorParcela)} - Data ${dataParcelaBR(indice, vencimento)}`);
+      });
+      return linhas.join("\n");
+    }
+
+    function criarLinhaParcela(indice, valorParcela, vencimento) {
+      const linha = document.createElement("div");
+      linha.className = "parcel-row";
+      linha.dataset.parcelRow = "";
+      linha.innerHTML = `
+        <input type="number" name="parcela_numero" min="1" value="${indice + 1}" aria-label="Numero da parcela">
+        <input type="text" name="parcela_valor" inputmode="decimal" value="${valorParcela}" placeholder="0,00" aria-label="Valor da parcela">
+        <input type="date" name="parcela_vencimento" value="${vencimento}" aria-label="Data de vencimento da parcela">
+      `;
+      linha.querySelectorAll("input").forEach((input) => {
+        input.addEventListener("input", atualizarPreview);
+        input.addEventListener("change", atualizarPreview);
+      });
+      return linha;
+    }
+
+    function valorParcelaPadrao(indice, quantidade) {
+      const total = numeroMoeda(valor("id_valor_cobrado"));
+      if (!total || !quantidade) return "";
+      const base = Math.floor((total / quantidade) * 100) / 100;
+      const valorLinha = indice + 1 === quantidade ? total - base * (quantidade - 1) : base;
+      return valorLinha.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function vencimentoPadrao(indice) {
+      const primeira = valor("id_primeira_parcela") || valor("id_data_festa");
+      if (!primeira) return "";
+      const partes = primeira.split("-").map(Number);
+      return formatarDataInput(addMeses(new Date(partes[0], partes[1] - 1, partes[2]), indice));
+    }
+
+    function sincronizarLinhasParcelas() {
+      if (!parcelRows || !quantidadeParcelas) return;
+      const quantidade = Math.max(parseInt(quantidadeParcelas.value || "1", 10) || 1, 1);
+      const linhasAtuais = Array.from(parcelRows.querySelectorAll("[data-parcel-row]"));
+      while (linhasAtuais.length > quantidade) {
+        const linha = linhasAtuais.pop();
+        linha.remove();
+      }
+      while (parcelRows.querySelectorAll("[data-parcel-row]").length < quantidade) {
+        const indice = parcelRows.querySelectorAll("[data-parcel-row]").length;
+        parcelRows.appendChild(criarLinhaParcela(indice, valorParcelaPadrao(indice, quantidade), vencimentoPadrao(indice)));
+      }
+      parcelRows.querySelectorAll("[data-parcel-row]").forEach((linha, indice) => {
+        const numero = linha.querySelector('[name="parcela_numero"]');
+        const valorInput = linha.querySelector('[name="parcela_valor"]');
+        const vencimento = linha.querySelector('[name="parcela_vencimento"]');
+        if (numero) numero.value = indice + 1;
+        if (valorInput && !valorInput.value) valorInput.value = valorParcelaPadrao(indice, quantidade);
+        if (vencimento && !vencimento.value) vencimento.value = vencimentoPadrao(indice);
+      });
+      atualizarPreview();
+    }
+
+    function preencherContato() {
+      if (!nome) return;
+      const cliente = clientes[nome.value];
+      if (!cliente) return;
+      if (contato && !contato.value) contato.value = cliente.telefone || "";
+      if (email && !email.value) email.value = cliente.email || "";
+    }
+
+    function alternarParcelas() {
+      if (!parcelas) return;
+      parcelas.classList.remove("is-hidden");
+      if (primeiraParcela) primeiraParcela.classList.remove("is-hidden");
+      sincronizarLinhasParcelas();
+    }
+
+    function atualizarPreview() {
+      const valorTotal = numeroMoeda(valor("id_valor_cobrado"));
+      const valorAdiantamento = numeroMoeda(valor("id_adiantamento"));
+      const restanteContrato = Math.max(valorTotal - valorAdiantamento, 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const autoriza = Boolean(campo("id_autoriza_uso_imagem")?.checked);
+      const restanteInput = campo("id_valor_restante_contrato");
+      if (restanteInput) restanteInput.value = restanteContrato;
+      const dados = {
+        cliente_nome: valor("id_nome"),
+        cliente_cpf: valor("id_cpf_contratante"),
+        cliente_endereco: valor("id_endereco_contratante"),
+        cliente_telefone: valor("id_contato"),
+        cliente_email: valor("id_email"),
+        aniversariante: valor("id_aniversariante") || valor("id_nome"),
+        idade: valor("id_idade"),
+        local_evento: valor("id_local_evento"),
+        data_evento: dataBR(valor("id_data_festa")),
+        horario_inicio: valor("id_horario"),
+        horario_fim: valor("id_horario_fim"),
+        servico: valor("id_descricao_servico") || valor("id_tipo_evento"),
+        valor: moedaBR(valor("id_valor_cobrado")),
+        forma_pagamento: textoSelect("id_forma_pagamento"),
+        parcelas: parcelasContrato(),
+        adiantamento: moedaBR(valor("id_adiantamento")),
+        restante: restanteContrato,
+        autoriza_uso_imagem_sim: autoriza ? " X " : "   ",
+        autoriza_uso_imagem_nao: autoriza ? "   " : " X ",
+        data_contrato: dataBR(formatarDataInput(new Date())),
+      };
+
+      Object.entries(dados).forEach(([chave, conteudo]) => {
+        document.querySelectorAll(`[data-preview="${chave}"]`).forEach((elemento) => {
+          elemento.textContent = conteudo || "";
+        });
+      });
+
+      const titulo = document.querySelector("[data-preview-title]");
+      if (titulo) titulo.textContent = dados.cliente_nome ? `Contrato - ${dados.cliente_nome}` : "Contrato de servico";
+    }
+
+    alternarParcelas();
+    atualizarPreview();
+    if (nome) nome.addEventListener("change", function () {
+      preencherContato();
+      atualizarPreview();
+    });
+    if (formaPagamento) formaPagamento.addEventListener("change", alternarParcelas);
+    if (quantidadeParcelas) quantidadeParcelas.addEventListener("input", sincronizarLinhasParcelas);
+    if (valorTotal) valorTotal.addEventListener("change", sincronizarLinhasParcelas);
+    if (vencimentoInicial) vencimentoInicial.addEventListener("change", sincronizarLinhasParcelas);
+    document.querySelectorAll("[data-contract-form] input, [data-contract-form] select, [data-contract-form] textarea").forEach((elemento) => {
+      elemento.addEventListener("input", atualizarPreview);
+      elemento.addEventListener("change", atualizarPreview);
+    });
+    document.querySelectorAll("[data-parcel-row] input").forEach((elemento) => {
+      elemento.addEventListener("input", atualizarPreview);
+      elemento.addEventListener("change", atualizarPreview);
+    });
+  });
+</script>
+{% endblock %}

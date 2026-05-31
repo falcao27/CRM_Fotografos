@@ -2,7 +2,7 @@
 {% load crm_format %}
 
 {% block page_title %}Despesas{% endblock %}
-{% block page_subtitle %}Custos separados por categoria, vencimento, status e forma de pagamento.{% endblock %}
+{% block page_subtitle %}Custos separados por mes, categoria, vencimento, status e forma de pagamento.{% endblock %}
 
 {% block content %}
 <section class="toolbar">
@@ -15,33 +15,121 @@
     </select>
     <button class="button ghost" type="submit"><i data-lucide="filter"></i>Filtrar</button>
   </form>
-  <a class="button" href="{% url 'despesa_nova' %}"><i data-lucide="plus"></i>Nova despesa</a>
-</section>
-
-<section class="panel">
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Descricao</th><th>Categoria</th><th>Data</th><th>Vencimento</th><th>Pagamento</th><th>Status</th><th>Valor</th><th>Acoes</th></tr></thead>
-      <tbody>
-        {% for despesa in despesas %}
-          <tr>
-            <td><strong>{{ despesa.descricao }}</strong><br><small>{{ despesa.observacoes }}</small></td>
-            <td>{{ despesa.categoria|default:"Sem categoria" }}</td>
-            <td>{{ despesa.data|date:"d/m/Y" }}</td>
-            <td>{{ despesa.vencimento|date:"d/m/Y" }}</td>
-            <td>{{ despesa.get_forma_pagamento_display }}</td>
-            <td><span class="badge {{ despesa.status }}">{{ despesa.get_status_display }}</span></td>
-            <td>{{ despesa.valor|brl }}</td>
-            <td class="actions">
-              <a class="icon-link" href="{% url 'despesa_editar' despesa.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
-              <a class="icon-link danger" href="{% url 'despesa_excluir' despesa.pk %}" title="Excluir"><i data-lucide="trash-2"></i></a>
-            </td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="8">Nenhuma despesa cadastrada.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="toolbar-actions">
+    {% if grupos_despesas %}
+      {% with grupo=grupos_despesas.0 %}
+        <a
+          class="button ghost"
+          href="{% url 'despesas_relatorio_pdf' grupo.chave.year grupo.chave.month %}{% if status %}?status={{ status }}{% endif %}"
+          target="_blank"
+          rel="noopener"
+          data-expense-report-link
+        >
+          <i data-lucide="file-down"></i>Relatorio PDF
+        </a>
+      {% endwith %}
+    {% endif %}
+    <a class="button" href="{% url 'despesa_nova' %}"><i data-lucide="plus"></i>Nova despesa</a>
   </div>
 </section>
+
+<section class="finance-groups">
+  {% for grupo in grupos_despesas %}
+    <button
+      class="panel finance-group-trigger"
+      type="button"
+      data-expense-target="despesasMes{{ forloop.counter }}"
+      data-expense-report-url="{% url 'despesas_relatorio_pdf' grupo.chave.year grupo.chave.month %}{% if status %}?status={{ status }}{% endif %}"
+    >
+      <span>{{ grupo.titulo }}</span>
+      <small>{{ grupo.descricao }} Total: {{ grupo.total_valor|brl }}</small>
+      <strong>{{ grupo.total }}</strong>
+    </button>
+  {% empty %}
+    <section class="panel"><p class="empty">Nenhuma despesa cadastrada.</p></section>
+  {% endfor %}
+</section>
+
+<section class="finance-group-popups">
+  {% for grupo in grupos_despesas %}
+    <article class="panel finance-group-panel" id="despesasMes{{ forloop.counter }}" hidden>
+      <button class="modal-close finance-group-close" type="button" data-expense-close aria-label="Fechar"><i data-lucide="x"></i></button>
+      <div class="panel-head">
+        <div>
+          <h2>{{ grupo.titulo }}</h2>
+          <small>{{ grupo.total }} despesa(s), {{ grupo.pagas }} paga(s), {{ grupo.pendentes }} pendente(s). Total: {{ grupo.total_valor|brl }}</small>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Descricao</th>
+              <th>Categoria</th>
+              <th>Data</th>
+              <th>Vencimento</th>
+              <th>Pagamento</th>
+              <th>Status</th>
+              <th>Valor</th>
+              <th>Acoes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for despesa in grupo.despesas %}
+              <tr>
+                <td><strong>{{ despesa.descricao }}</strong><br><small>{{ despesa.observacoes }}</small></td>
+                <td>{{ despesa.categoria|default:"Sem categoria" }}</td>
+                <td>{{ despesa.data|date:"d/m/Y" }}</td>
+                <td>{{ despesa.vencimento|date:"d/m/Y" }}</td>
+                <td>{{ despesa.get_forma_pagamento_display }}</td>
+                <td><span class="badge {{ despesa.status }}">{{ despesa.get_status_display }}</span></td>
+                <td>{{ despesa.valor|brl }}</td>
+                <td class="actions">
+                  <a class="icon-link" href="{% url 'despesa_editar' despesa.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
+                  <a class="icon-link danger" href="{% url 'despesa_excluir' despesa.pk %}" title="Excluir"><i data-lucide="trash-2"></i></a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  {% endfor %}
+</section>
+
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    function refreshIcons() {
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    const reportLink = document.querySelector("[data-expense-report-link]");
+
+    document.querySelectorAll("[data-expense-target]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        const panel = document.getElementById(button.dataset.expenseTarget);
+        document.querySelectorAll(".finance-group-panel").forEach(function (item) {
+          item.hidden = item !== panel || !item.hidden;
+        });
+        if (reportLink && panel && !panel.hidden) {
+          reportLink.href = button.dataset.expenseReportUrl;
+        }
+        refreshIcons();
+      });
+    });
+
+    document.querySelectorAll("[data-expense-close]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        button.closest(".finance-group-panel").hidden = true;
+      });
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape") return;
+      document.querySelectorAll(".finance-group-panel:not([hidden])").forEach(function (panel) {
+        panel.hidden = true;
+      });
+    });
+  });
+</script>
 {% endblock %}

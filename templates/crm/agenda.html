@@ -31,7 +31,16 @@
               class="mini-day{% if not dia.no_mes %} muted{% endif %}{% if dia.hoje %} today{% endif %}{% if dia.selecionado %} selected{% endif %}"
               href="?data={{ dia.iso }}"
               aria-label="{{ dia.data|date:'d/m/Y' }}"
-            >{{ dia.numero }}</a>
+            >
+              <span>{{ dia.numero }}</span>
+              {% if dia.tons %}
+                <span class="mini-day-markers" aria-hidden="true">
+                  {% for tom in dia.tons %}
+                    <i class="mini-day-marker tone-{{ tom }}"></i>
+                  {% endfor %}
+                </span>
+              {% endif %}
+            </a>
           {% endfor %}
         </div>
       {% endfor %}

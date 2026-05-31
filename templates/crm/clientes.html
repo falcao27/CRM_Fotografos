@@ -9,13 +9,33 @@
     <input type="search" name="q" value="{{ busca }}" placeholder="Buscar por nome, telefone ou email">
     <button class="button ghost" type="submit"><i data-lucide="search"></i>Buscar</button>
   </form>
-  <a class="button" href="{% url 'cliente_novo' %}"><i data-lucide="plus"></i>Novo cliente</a>
+  <div class="toolbar-actions">
+    <a class="button ghost" href="{% url 'clientes_exportar_planilha' %}"><i data-lucide="download"></i>Extrair planilha</a>
+    <form class="import-form" id="clientes-import-form" method="post" action="{% url 'clientes_importar_planilha' %}" enctype="multipart/form-data">
+      {% csrf_token %}
+      <label class="button ghost" for="planilha-clientes"><i data-lucide="upload"></i>Importa Planilha</label>
+      <input id="planilha-clientes" type="file" name="planilha" accept=".xlsx,.csv">
+    </form>
+    <a class="button" href="{% url 'cliente_novo' %}"><i data-lucide="plus"></i>Novo cliente</a>
+  </div>
 </section>
+
+<div class="spreadsheet-loading" id="clientes-loading" hidden>
+  <div class="spreadsheet-loading-panel" role="status" aria-live="polite">
+    <div class="camera-loader" aria-hidden="true">
+      <i data-lucide="camera"></i>
+      <i data-lucide="aperture"></i>
+      <i data-lucide="camera"></i>
+    </div>
+    <strong>Carregando planilha</strong>
+    <small>Os clientes serao cadastrados automaticamente.</small>
+  </div>
+</div>
 
 <section class="panel">
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Nome</th><th>Contato</th><th>Evento</th><th>Alerta 10 meses antes</th><th>Vendas</th><th>Acoes</th></tr></thead>
+      <thead><tr><th>Nome</th><th>Contato</th><th>Evento</th><th>Alerta de 02 meses antes</th><th>Vendas</th><th>Acoes</th></tr></thead>
       <tbody>
         {% for cliente in clientes %}
           <tr>
@@ -42,4 +62,21 @@
     </table>
   </div>
 </section>
+
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    const input = document.getElementById("planilha-clientes");
+    const form = document.getElementById("clientes-import-form");
+    const loading = document.getElementById("clientes-loading");
+
+    if (!input || !form || !loading) return;
+
+    input.addEventListener("change", function () {
+      if (!input.files.length) return;
+      loading.hidden = false;
+      if (window.lucide) window.lucide.createIcons();
+      form.submit();
+    });
+  });
+</script>
 {% endblock %}

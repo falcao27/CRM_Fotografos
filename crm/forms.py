@@ -277,8 +277,8 @@ class ReuniaoLeadForm(forms.Form):
 
 
 class EventoForm(forms.ModelForm):
-    nome = forms.CharField(label="Nome", max_length=160)
-    email = forms.EmailField(label="E-mail do cliente", required=False)
+    nome = forms.CharField(label="Nome completo do contratante", max_length=160)
+    email = forms.EmailField(label="E-mail do contratante", required=False)
     tipo_evento = forms.CharField(
         label="Tipo do evento",
         required=False,
@@ -292,9 +292,16 @@ class EventoForm(forms.ModelForm):
         ),
     )
     valor_cobrado = CurrencyField(
-        label="Valor cobrado",
+        label="Valor total contratado",
         max_digits=10,
         decimal_places=2,
+        widget=forms.TextInput(attrs={"inputmode": "decimal", "placeholder": "0,00"}),
+    )
+    adiantamento = CurrencyField(
+        label="Valor do adiantamento",
+        max_digits=10,
+        decimal_places=2,
+        required=False,
         widget=forms.TextInput(attrs={"inputmode": "decimal", "placeholder": "0,00"}),
     )
 
@@ -306,34 +313,52 @@ class EventoForm(forms.ModelForm):
             "tipo_evento",
             "data_festa",
             "horario",
+            "horario_fim",
             "contato",
+            "cpf_contratante",
+            "endereco_contratante",
+            "aniversariante",
+            "idade",
             "local_evento",
             "em_buffet",
+            "descricao_servico",
             "valor_cobrado",
             "forma_pagamento",
             "pagamento_recebido",
             "quantidade_parcelas",
             "primeira_parcela",
+            "adiantamento",
+            "autoriza_uso_imagem",
             "observacoes",
         ]
         labels = {
             "tipo_evento": "Tipo do evento",
-            "data_festa": "Data festa",
-            "horario": "Horario",
-            "contato": "Contato",
+            "data_festa": "Data do evento",
+            "horario": "Horario de inicio",
+            "horario_fim": "Horario de termino",
+            "contato": "Telefone do contratante",
+            "cpf_contratante": "CPF do contratante",
+            "endereco_contratante": "Endereco do contratante",
+            "aniversariante": "Nome do aniversariante",
+            "idade": "Idade do aniversariante",
             "local_evento": "Local do evento",
             "em_buffet": "Sera em buffet?",
+            "descricao_servico": "Descricao do servico contratado",
             "valor_cobrado": "Valor cobrado",
             "forma_pagamento": "Forma de pagamento",
-            "pagamento_recebido": "Valor ja foi pago?",
-            "quantidade_parcelas": "Quantas vezes",
+            "pagamento_recebido": "Pagamento ja recebido?",
+            "quantidade_parcelas": "Quantidade de parcelas",
             "primeira_parcela": "Data do primeiro pagamento",
-            "observacoes": "Observacao",
+            "autoriza_uso_imagem": "Autoriza uso de imagem?",
+            "observacoes": "Observacoes internas",
         }
         widgets = {
             "data_festa": DateInput(),
             "primeira_parcela": DateInput(),
             "horario": forms.TimeInput(attrs={"type": "time"}),
+            "horario_fim": forms.TimeInput(attrs={"type": "time"}),
+            "endereco_contratante": forms.TextInput(attrs={"placeholder": "Rua, numero, bairro, cidade"}),
+            "descricao_servico": forms.Textarea(attrs={"rows": 4, "placeholder": "Descreva exatamente o servico contratado"}),
             "local_evento": forms.TextInput(attrs={"placeholder": "Ex: Buffet, igreja, salao, endereco"}),
             "quantidade_parcelas": forms.NumberInput(attrs={"min": 1, "max": 60}),
             "observacoes": forms.Textarea(attrs={"rows": 3}),
@@ -346,6 +371,13 @@ class EventoForm(forms.ModelForm):
             self.fields["nome"].initial = instance.cliente.nome if instance.cliente else instance.nome
             self.fields["email"].initial = instance.cliente.email if instance.cliente else ""
             self.fields["tipo_evento"].initial = dict(Evento.TIPO_CHOICES).get(instance.tipo_evento, instance.tipo_evento)
+            if not instance.valor_cobrado:
+                self.fields["valor_cobrado"].initial = ""
+            if not instance.adiantamento:
+                self.fields["adiantamento"].initial = ""
+        elif not self.is_bound:
+            self.fields["valor_cobrado"].initial = ""
+            self.fields["adiantamento"].initial = ""
         self.tipo_evento_opcoes = opcoes_tipo_evento()
         clientes = Cliente.objects.order_by("nome")
         vistos = set()
@@ -377,21 +409,24 @@ class EventoForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
-        forma_pagamento = cleaned_data.get("forma_pagamento")
         quantidade = cleaned_data.get("quantidade_parcelas") or 1
-        if forma_pagamento not in {"boleto", "cartao"}:
-            cleaned_data["quantidade_parcelas"] = 1
-        elif quantidade < 1:
+        if quantidade < 1:
             self.add_error("quantidade_parcelas", "Informe pelo menos 1 parcela.")
+        valor_cobrado = cleaned_data.get("valor_cobrado") or Decimal("0.00")
+        adiantamento = cleaned_data.get("adiantamento") or Decimal("0.00")
+        cleaned_data["adiantamento"] = adiantamento
+        if adiantamento > valor_cobrado:
+            self.add_error("adiantamento", "O adiantamento nao pode ser maior que o valor cobrado.")
         return cleaned_data
 
     def save(self, commit=True):
         evento = super().save(commit=False)
         criando_evento = not evento.pk
+        self.documento_criado = None
         nome = self.cleaned_data["nome"].strip()
         evento.nome = nome
-        if evento.forma_pagamento not in {"boleto", "cartao"}:
-            evento.quantidade_parcelas = 1
+        if not evento.adiantamento:
+            evento.adiantamento = Decimal("0.00")
         cliente = Cliente.objects.filter(nome__iexact=nome).first()
         if not cliente:
             cliente = Cliente(nome=nome)
@@ -409,7 +444,7 @@ class EventoForm(forms.ModelForm):
             self.sincronizar_venda(evento)
             self.sincronizar_lembrete_anual(evento)
             if criando_evento:
-                self.criar_documento_evento(evento)
+                self.documento_criado = self.criar_documento_evento(evento)
             self.save_m2m()
         else:
             evento.cliente = cliente
@@ -425,7 +460,7 @@ class EventoForm(forms.ModelForm):
             defaults={
                 "cliente": evento.cliente,
                 "titulo": f"Contrato - {evento.nome}",
-                "status": "pendente",
+                "status": "rascunho",
                 "contato_whatsapp": contato_whatsapp,
                 "contato_email": evento.cliente.email,
                 "forma_envio": "ambos",
@@ -534,6 +569,12 @@ class DocumentoForm(forms.ModelForm):
             "enviado_em": DateInput(),
             "assinado_em": DateInput(),
             "data_limite": DateInput(),
-            "conteudo_contrato": forms.Textarea(attrs={"rows": 14}),
+            "conteudo_contrato": forms.Textarea(
+                attrs={
+                    "rows": 30,
+                    "class": "contract-editor",
+                    "spellcheck": "true",
+                }
+            ),
             "observacoes": forms.Textarea(attrs={"rows": 3}),
         }

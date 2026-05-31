@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block page_title %}Documento{% endblock %}
+{% block page_subtitle %}Revise o contrato antes de enviar ao cliente.{% endblock %}
+
+{% block content %}
+<form class="document-form" method="post" enctype="multipart/form-data" novalidate>
+  {% csrf_token %}
+
+  <section class="form-panel document-form-panel">
+    <div class="document-form-grid">
+      <label>
+        <span>{{ form.cliente.label }}</span>
+        {{ form.cliente }}
+        {% for error in form.cliente.errors %}<em>{{ error }}</em>{% endfor %}
+      </label>
+      <label>
+        <span>{{ form.evento.label }}</span>
+        {{ form.evento }}
+        {% for error in form.evento.errors %}<em>{{ error }}</em>{% endfor %}
+      </label>
+      <label>
+        <span>{{ form.titulo.label }}</span>
+        {{ form.titulo }}
+        {% for error in form.titulo.errors %}<em>{{ error }}</em>{% endfor %}
+      </label>
+      <label>
+        <span>{{ form.status.label }}</span>
+        {{ form.status }}
+        {% for error in form.status.errors %}<em>{{ error }}</em>{% endfor %}
+      </label>
+      <label>
+        <span>{{ form.contato_whatsapp.label }}</span>
+        {{ form.contato_whatsapp }}
+        {% for error in form.contato_whatsapp.errors %}<em>{{ error }}</em>{% endfor %}
+      </label>
+      <label>
+        <span>{{ form.contato_email.label }}</span>
+        {{ form.contato_email }}
+        {% for error in form.contato_email.errors %}<em>{{ error }}</em>{% endfor %}
+      </label>
+      <label>
+        <span>{{ form.forma_envio.label }}</span>
+        {{ form.forma_envio }}
+        {% for error in form.forma_envio.errors %}<em>{{ error }}</em>{% endfor %}
+      </label>
+      <label>
+        <span>{{ form.data_limite.label }}</span>
+        {{ form.data_limite }}
+        {% for error in form.data_limite.errors %}<em>{{ error }}</em>{% endfor %}
+      </label>
+    </div>
+  </section>
+
+  <input type="hidden" name="{{ form.conteudo_contrato.html_name }}" value="{{ form.conteudo_contrato.value|default_if_none:'' }}">
+
+  <section class="form-panel document-form-panel">
+    <div class="document-form-grid document-form-grid-small">
+      <label>
+        <span>{{ form.enviado_em.label }}</span>
+        {{ form.enviado_em }}
+        {% for error in form.enviado_em.errors %}<em>{{ error }}</em>{% endfor %}
+      </label>
+      <label>
+        <span>{{ form.assinado_em.label }}</span>
+        {{ form.assinado_em }}
+        {% for error in form.assinado_em.errors %}<em>{{ error }}</em>{% endfor %}
+      </label>
+      <label>
+        <span>{{ form.arquivo_assinado.label }}</span>
+        {{ form.arquivo_assinado }}
+        {% for error in form.arquivo_assinado.errors %}<em>{{ error }}</em>{% endfor %}
+      </label>
+      <label>
+        <span>{{ form.observacoes.label }}</span>
+        {{ form.observacoes }}
+        {% for error in form.observacoes.errors %}<em>{{ error }}</em>{% endfor %}
+      </label>
+    </div>
+  </section>
+
+  <div class="row-actions document-actions">
+    <button class="button" type="submit"><i data-lucide="save"></i>Salvar contrato</button>
+    {% if documento %}
+      <a class="button ghost" href="{% url 'documento_pdf' documento.pk %}" target="_blank" rel="noopener"><i data-lucide="file-text"></i>Abrir PDF</a>
+    {% endif %}
+    <a class="button ghost" href="{% url 'documentos' %}">Voltar</a>
+  </div>
+</form>
+{% endblock %}

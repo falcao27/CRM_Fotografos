@@ -11,7 +11,9 @@
   </p>
   <div class="row-actions">
     <a class="button" href="{{ whatsapp_url }}" target="_blank" rel="noopener"><i data-lucide="message-circle"></i>Abrir WhatsApp</a>
-    <a class="button ghost" href="{% url 'documento_pdf' documento.pk %}?download=1"><i data-lucide="download"></i>Baixar PDF</a>
+    {% if documento.arquivo_assinado %}
+      <a class="button ghost" href="{{ documento.arquivo_assinado.url }}" target="_blank" rel="noopener"><i data-lucide="badge-check"></i>Visualizar contrato assinado</a>
+    {% endif %}
     <a class="button ghost" href="{% url 'documentos' %}">Voltar</a>
   </div>
 </section>
