@@ -140,8 +140,7 @@ class Venda(models.Model):
 
     @property
     def valor_pago(self):
-        pago = self.parcelas.filter(status="pago").aggregate(total=models.Sum("valor"))["total"]
-        return pago or Decimal("0.00")
+        return sum((parcela.valor_recebido_efetivo for parcela in self.parcelas.all()), Decimal("0.00"))
 
     @property
     def valor_pendente(self):
@@ -151,6 +150,7 @@ class Venda(models.Model):
 class Parcela(models.Model):
     STATUS_CHOICES = [
         ("pendente", "Pendente"),
+        ("parcial", "Parcial"),
         ("pago", "Pago"),
         ("atrasado", "Atrasado"),
     ]
@@ -158,6 +158,7 @@ class Parcela(models.Model):
     venda = models.ForeignKey(Venda, on_delete=models.CASCADE, related_name="parcelas")
     numero = models.PositiveIntegerField()
     valor = models.DecimalField(max_digits=10, decimal_places=2)
+    valor_recebido = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     vencimento = models.DateField()
     data_pagamento = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pendente")
@@ -171,6 +172,18 @@ class Parcela(models.Model):
 
     def __str__(self):
         return f"Parcela {self.numero} - {self.venda}"
+
+    @property
+    def valor_recebido_efetivo(self):
+        if self.valor_recebido:
+            return self.valor_recebido
+        if self.status == "pago":
+            return self.valor
+        return Decimal("0.00")
+
+    @property
+    def valor_em_aberto(self):
+        return max(self.valor - self.valor_recebido_efetivo, Decimal("0.00"))
 
     @property
     def deve_alertar(self):
@@ -356,7 +369,7 @@ class Evento(models.Model):
             return "pago"
         if self.venda_id:
             for parcela in self.venda.parcelas.all():
-                if parcela.status in ["pendente", "atrasado"] and parcela.vencimento < timezone.localdate():
+                if parcela.status in ["pendente", "parcial", "atrasado"] and parcela.vencimento < timezone.localdate():
                     return "vencido"
         return "pendente"
 

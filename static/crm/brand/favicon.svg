@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="JB camera icon">
+  <defs>
+    <linearGradient id="bg" x1="10" y1="8" x2="54" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <path d="M18 25h7.2l2.9-4.2c.6-.9 1.6-1.4 2.7-1.4h8.5c1.1 0 2.1.5 2.7 1.4l2.9 4.2H50c3 0 5.4 2.4 5.4 5.4v15.1c0 3-2.4 5.4-5.4 5.4H18c-3 0-5.4-2.4-5.4-5.4V30.4c0-3 2.4-5.4 5.4-5.4Z" fill="#f8fafc"/>
+  <circle cx="34" cy="38" r="8.6" fill="#111827"/>
+  <circle cx="34" cy="38" r="5.2" fill="#38bdf8"/>
+  <circle cx="49" cy="31" r="2.2" fill="#111827"/>
+  <text x="32" y="18" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="800" letter-spacing="0" fill="#ffffff">JB</text>
+</svg>

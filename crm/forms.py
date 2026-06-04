@@ -151,15 +151,60 @@ class VendaForm(forms.ModelForm):
 
 
 class ParcelaForm(forms.ModelForm):
+    valor = CurrencyField(
+        label="Valor contratado da parcela",
+        max_digits=10,
+        decimal_places=2,
+        widget=forms.TextInput(attrs={"inputmode": "decimal", "placeholder": "0,00"}),
+    )
+    valor_recebido = CurrencyField(
+        label="Valor recebido",
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        widget=forms.TextInput(attrs={"inputmode": "decimal", "placeholder": "0,00"}),
+    )
+
     class Meta:
         model = Parcela
-        fields = ["numero", "valor", "vencimento", "data_pagamento", "status", "lembrete_em", "observacoes"]
+        fields = ["numero", "valor", "valor_recebido", "vencimento", "data_pagamento", "status", "lembrete_em", "observacoes"]
         widgets = {
             "vencimento": DateInput(),
             "data_pagamento": DateInput(),
             "lembrete_em": DateInput(),
             "observacoes": forms.Textarea(attrs={"rows": 2}),
         }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        valor = cleaned_data.get("valor") or Decimal("0.00")
+        valor_recebido = cleaned_data.get("valor_recebido") or Decimal("0.00")
+        status = cleaned_data.get("status")
+        if valor_recebido < 0:
+            self.add_error("valor_recebido", "O valor recebido nao pode ser negativo.")
+        if status == "pago" and not valor_recebido:
+            cleaned_data["valor_recebido"] = valor
+        return cleaned_data
+
+    def save(self, commit=True):
+        parcela = super().save(commit=False)
+        if not parcela.valor_recebido:
+            parcela.valor_recebido = Decimal("0.00")
+        if parcela.valor_recebido >= parcela.valor and parcela.valor:
+            parcela.status = "pago"
+            if not parcela.data_pagamento:
+                parcela.data_pagamento = timezone.localdate()
+        elif parcela.valor_recebido > 0:
+            parcela.status = "parcial"
+            if not parcela.data_pagamento:
+                parcela.data_pagamento = timezone.localdate()
+        elif parcela.status in ["pago", "parcial"]:
+            parcela.status = "pendente"
+            parcela.data_pagamento = None
+        if commit:
+            parcela.save()
+            self.save_m2m()
+        return parcela
 
 
 class DespesaForm(forms.ModelForm):
@@ -421,8 +466,6 @@ class EventoForm(forms.ModelForm):
 
     def save(self, commit=True):
         evento = super().save(commit=False)
-        criando_evento = not evento.pk
-        self.documento_criado = None
         nome = self.cleaned_data["nome"].strip()
         evento.nome = nome
         if not evento.adiantamento:
@@ -443,8 +486,6 @@ class EventoForm(forms.ModelForm):
             evento.save()
             self.sincronizar_venda(evento)
             self.sincronizar_lembrete_anual(evento)
-            if criando_evento:
-                self.documento_criado = self.criar_documento_evento(evento)
             self.save_m2m()
         else:
             evento.cliente = cliente
@@ -505,8 +546,13 @@ class EventoForm(forms.ModelForm):
             parcela.valor = valor
             parcela.vencimento = add_months(primeira_parcela, numero - 1)
             parcela.lembrete_em = parcela.vencimento
-            parcela.status = "pago" if pagamento_recebido else "pendente"
-            parcela.data_pagamento = hoje if parcela.status == "pago" else None
+            if pagamento_recebido:
+                parcela.valor_recebido = valor
+                parcela.status = "pago"
+                parcela.data_pagamento = hoje
+            elif not parcela.valor_recebido:
+                parcela.status = "pendente"
+                parcela.data_pagamento = None
             parcela.observacoes = "Gerada automaticamente pelo cadastro do evento."
             parcela.save()
             parcelas_mantidas.append(parcela.pk)

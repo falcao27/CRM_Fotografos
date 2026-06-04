@@ -26,6 +26,17 @@
             <small>{{ parcela.venda.cliente.telefone }} {{ parcela.venda.cliente.email }}</small>
           </div>
           <b>{{ parcela.valor|brl }}</b>
+          {% if parcela.whatsapp_url %}
+            <a
+              class="icon-link alert-card-action"
+              href="{{ parcela.whatsapp_url }}"
+              target="_blank"
+              rel="noopener"
+              title="Abrir WhatsApp com mensagem pronta"
+            >
+              <i data-lucide="message-circle"></i>
+            </a>
+          {% endif %}
           <div class="alert-popup-content">
             <h3>Cobrar cliente</h3>
             <p><strong>Cliente:</strong> {{ parcela.venda.cliente.nome }}</p>
@@ -179,7 +190,7 @@
   </div>
 
   <div class="panel{% if clientes_recompra %} attention-panel{% endif %}">
-    <div class="panel-head"><h2>Fechar nova venda</h2></div>
+    <div class="panel-head"><h2>Fechar nova venda de 2 meses para o evento</h2></div>
     <div class="list">
       {% for cliente in clientes_recompra %}
         <div class="list-row alert-card" role="button" tabindex="0">

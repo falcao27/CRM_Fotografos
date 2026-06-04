@@ -13,9 +13,10 @@
 
 <div class="drawer-summary">
   <div>
-    <span>Total em vendas</span>
+    <span>Total contratado</span>
     <strong>{{ totais|brl }}</strong>
   </div>
+  <a class="button ghost" href="{% url 'cobrancas' %}"><i data-lucide="receipt"></i>Cobrancas</a>
   <a class="button ghost" href="{% url 'cliente_editar' cliente.pk %}"><i data-lucide="contact-round"></i>Editar cliente</a>
 </div>
 
@@ -45,11 +46,24 @@
           <div class="installment {% if parcela.deve_alertar %}attention{% endif %}">
             <span>#{{ parcela.numero }}</span>
             <strong>{{ parcela.valor|brl }}</strong>
+            <small>Recebido {{ parcela.valor_recebido_efetivo|brl }}</small>
+            <small>Em aberto {{ parcela.valor_em_aberto|brl }}</small>
             <small>Vence {{ parcela.vencimento|date:"d/m/Y" }}</small>
             <small>Lembrete {{ parcela.lembrete_em|date:"d/m/Y" }}</small>
             <span class="badge {{ parcela.status_financeiro }}">{{ parcela.status_financeiro_label }}</span>
             {% if parcela.status_financeiro == "vencido" %}
               <small class="overdue-text">Pagamento vencido. Cobrar cliente.</small>
+            {% endif %}
+            {% if parcela.status != "pago" %}
+              <form class="inline-form payment-quick-form" method="post" action="{% url 'parcela_marcar_pago' parcela.pk %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{% url 'financeiro' %}">
+                <label class="payment-inline-field">
+                  <span>Recebido agora</span>
+                  <input type="text" name="valor_recebido" value="{{ parcela.valor_em_aberto|moeda_input }}" inputmode="decimal">
+                </label>
+                <button class="button ghost compact-button" type="submit"><i data-lucide="check"></i>Registrar</button>
+              </form>
             {% endif %}
             <a class="icon-link" href="{% url 'parcela_editar' parcela.pk %}" title="Editar parcela"><i data-lucide="pencil"></i></a>
           </div>

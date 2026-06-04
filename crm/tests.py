@@ -1,8 +1,10 @@
 from io import BytesIO
+from decimal import Decimal
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from .models import Cliente, Despesa, Documento, Evento, Oportunidade, Parcela, Tarefa, Venda
 from .views import ler_linhas_xlsx
@@ -29,14 +31,24 @@ class EventoDocumentoFlowTests(TestCase):
             "observacoes": "Contrato automatico",
         }
 
-    def test_criar_evento_gera_documento_rascunho_e_volta_para_eventos(self):
+    def test_salvar_evento_nao_gera_documento_automaticamente(self):
         response = self.client.post(reverse("evento_novo"), self.dados_evento())
+
+        evento = Evento.objects.get(nome="Maria Silva")
+        self.assertFalse(Documento.objects.filter(evento=evento).exists())
+        self.assertRedirects(response, reverse("eventos"))
+
+    def test_gerar_contrato_cria_documento_e_vai_para_documentos(self):
+        dados = self.dados_evento()
+        dados["acao"] = "gerar_contrato"
+
+        response = self.client.post(reverse("evento_novo"), dados)
 
         evento = Evento.objects.get(nome="Maria Silva")
         documento = Documento.objects.get(evento=evento)
         self.assertEqual(documento.status, "rascunho")
         self.assertEqual(documento.cliente, evento.cliente)
-        self.assertRedirects(response, reverse("eventos"))
+        self.assertRedirects(response, reverse("documentos"))
 
     def test_formulario_evento_exibe_campos_e_previa_do_contrato(self):
         response = self.client.get(reverse("evento_novo"))
@@ -103,6 +115,7 @@ class EventoDocumentoFlowTests(TestCase):
             }
         )
 
+        dados["acao"] = "gerar_contrato"
         self.client.post(reverse("evento_novo"), dados)
 
         documento = Documento.objects.select_related("evento", "cliente").get()
@@ -161,7 +174,9 @@ class EventoDocumentoFlowTests(TestCase):
         self.assertEqual(sum((parcela.valor for parcela in parcelas)), 600)
 
     def test_documento_rascunho_nao_envia_antes_de_salvar_revisao(self):
-        self.client.post(reverse("evento_novo"), self.dados_evento())
+        dados = self.dados_evento()
+        dados["acao"] = "gerar_contrato"
+        self.client.post(reverse("evento_novo"), dados)
         documento = Documento.objects.get()
 
         response = self.client.post(reverse("documento_enviar", args=[documento.pk]))
@@ -171,7 +186,9 @@ class EventoDocumentoFlowTests(TestCase):
         self.assertRedirects(response, reverse("documento_editar", args=[documento.pk]))
 
     def test_salvar_documento_revisado_libera_envio_e_pdf_usa_texto_editado(self):
-        self.client.post(reverse("evento_novo"), self.dados_evento())
+        dados = self.dados_evento()
+        dados["acao"] = "gerar_contrato"
+        self.client.post(reverse("evento_novo"), dados)
         documento = Documento.objects.select_related("cliente", "evento").get()
         conteudo = "CONTRATO REVISADO PARA {{ cliente_nome }}\nClausula especial editada."
 
@@ -255,3 +272,151 @@ class DespesasTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "application/pdf")
         self.assertIn(b"Aluguel", response.content)
+
+
+class FinanceiroReceitasTests(TestCase):
+    def criar_venda_com_parcela(self):
+        cliente = Cliente.objects.create(nome="Cliente Parcial", telefone="85999990000")
+        venda = Venda.objects.create(
+            cliente=cliente,
+            titulo="Aniversario",
+            valor_total="600.00",
+            status="pendente",
+            forma_pagamento="boleto",
+            condicao_pagamento="parcelado",
+            quantidade_parcelas=3,
+        )
+        Evento.objects.create(
+            cliente=cliente,
+            venda=venda,
+            nome="Cliente Parcial",
+            tipo_evento="aniversario",
+            valor_cobrado="600.00",
+            forma_pagamento="boleto",
+            quantidade_parcelas=3,
+        )
+        parcela = Parcela.objects.create(
+            venda=venda,
+            numero=1,
+            valor="200.00",
+            vencimento="2026-06-01",
+            status="pendente",
+        )
+        return venda, parcela
+
+    def test_baixa_parcial_mantem_valor_contratado_e_saldo_aberto(self):
+        venda, parcela = self.criar_venda_com_parcela()
+
+        response = self.client.post(
+            reverse("parcela_marcar_pago", args=[parcela.pk]),
+            {"valor_recebido": "150,00", "next": reverse("cobrancas")},
+        )
+
+        parcela.refresh_from_db()
+        venda.refresh_from_db()
+        self.assertRedirects(response, reverse("cobrancas"))
+        self.assertEqual(parcela.status, "parcial")
+        self.assertEqual(parcela.valor, Decimal("200.00"))
+        self.assertEqual(parcela.valor_recebido, Decimal("150.00"))
+        self.assertEqual(parcela.valor_em_aberto, Decimal("50.00"))
+        self.assertEqual(venda.status, "pendente")
+
+    def test_venda_so_fica_paga_quando_recebido_cobre_total_contratado(self):
+        venda, parcela = self.criar_venda_com_parcela()
+        Parcela.objects.create(
+            venda=venda,
+            numero=2,
+            valor="200.00",
+            valor_recebido="200.00",
+            vencimento="2026-07-01",
+            data_pagamento="2026-06-03",
+            status="pago",
+        )
+        Parcela.objects.create(
+            venda=venda,
+            numero=3,
+            valor="200.00",
+            valor_recebido="200.00",
+            vencimento="2026-08-01",
+            data_pagamento="2026-06-03",
+            status="pago",
+        )
+
+        self.client.post(
+            reverse("parcela_marcar_pago", args=[parcela.pk]),
+            {"valor_recebido": "200,00", "next": reverse("cobrancas")},
+        )
+
+        venda.refresh_from_db()
+        self.assertEqual(venda.status, "pago")
+
+    def test_financeiro_mostra_evento_pix_parcelado_com_parcelas_abertas(self):
+        cliente = Cliente.objects.create(nome="Antonio Silva", telefone="8501020305")
+        venda = Venda.objects.create(
+            cliente=cliente,
+            titulo="Aniversario",
+            valor_total="800.00",
+            status="pendente",
+            forma_pagamento="pix",
+            condicao_pagamento="parcelado",
+            quantidade_parcelas=3,
+        )
+        Evento.objects.create(
+            cliente=cliente,
+            venda=venda,
+            nome="Antonio Silva",
+            tipo_evento="aniversario",
+            valor_cobrado="800.00",
+            forma_pagamento="pix",
+            quantidade_parcelas=3,
+            data_festa="2026-08-15",
+        )
+        Parcela.objects.create(venda=venda, numero=1, valor="400.00", vencimento="2026-07-03", status="pendente")
+        Parcela.objects.create(venda=venda, numero=2, valor="200.00", vencimento="2026-08-03", status="pendente")
+        Parcela.objects.create(venda=venda, numero=3, valor="200.00", vencimento="2026-09-03", status="pendente")
+
+        response = self.client.get(reverse("financeiro"))
+
+        grupo_em_dia = next(grupo for grupo in response.context["grupos_financeiros"] if grupo["status_painel"] == "pendente")
+        self.assertEqual(grupo_em_dia["total"], 1)
+        self.assertEqual(grupo_em_dia["clientes"][0]["cliente"], cliente)
+
+    def test_dashboard_contabiliza_adiantamento_como_receita_recebida(self):
+        hoje = timezone.localdate()
+        cliente = Cliente.objects.create(nome="Cliente Adiantamento")
+        venda = Venda.objects.create(
+            cliente=cliente,
+            titulo="Aniversario",
+            data_venda=hoje,
+            valor_total="600.00",
+            status="pendente",
+            forma_pagamento="pix",
+            condicao_pagamento="parcelado",
+            quantidade_parcelas=1,
+        )
+        Evento.objects.create(
+            cliente=cliente,
+            venda=venda,
+            nome="Cliente Adiantamento",
+            tipo_evento="aniversario",
+            valor_cobrado="600.00",
+            forma_pagamento="pix",
+            quantidade_parcelas=1,
+            adiantamento="200.00",
+        )
+        Parcela.objects.create(
+            venda=venda,
+            numero=1,
+            valor="400.00",
+            vencimento=hoje,
+            status="pendente",
+        )
+
+        response = self.client.get(reverse("dashboard"))
+        totais = response.context["totais"]
+
+        self.assertEqual(totais["receitas_recebidas"], Decimal("200.00"))
+        self.assertEqual(totais["receitas_a_receber"], Decimal("400.00"))
+        self.assertEqual(totais["saldo_atual"], Decimal("200.00"))
+        self.assertEqual(totais["saldo_previsto"], Decimal("600.00"))
+        self.assertEqual(response.context["formas_pagamento"][0]["total"], Decimal("200.00"))

@@ -6,6 +6,7 @@ from calendar import Calendar, monthrange
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from html import escape
+from urllib.parse import quote
 from xml.etree import ElementTree as ET
 
 from django.contrib import messages
@@ -42,7 +43,7 @@ from .models import (
     Venda,
 )
 from .pdf import gerar_pdf_documento, gerar_pdf_relatorio_despesas, nome_pdf_documento
-from .services import EnvioDocumentoError, enviar_documento, link_whatsapp_manual
+from .services import EnvioDocumentoError, enviar_documento, link_whatsapp_manual, normalizar_whatsapp
 
 
 MESES_PT = [
@@ -71,6 +72,46 @@ CLIENTE_PLANILHA_CAMPOS = [
 ]
 
 
+def formatar_moeda_whatsapp(valor):
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def link_whatsapp_parcelas(cliente, parcelas, tipo):
+    numero = normalizar_whatsapp(cliente.telefone if cliente else "")
+    if not numero:
+        return ""
+
+    parcelas = list(parcelas)
+    total = sum((parcela.valor_em_aberto for parcela in parcelas), Decimal("0.00"))
+    linhas = []
+    for parcela in parcelas:
+        linhas.append(
+            "- Parcela "
+            f"{parcela.numero}/{parcela.venda.quantidade_parcelas} "
+            f"({parcela.venda.titulo}) no valor em aberto de {formatar_moeda_whatsapp(parcela.valor_em_aberto)}, "
+            f"vencimento em {parcela.vencimento:%d/%m/%Y}."
+        )
+
+    nome = cliente.nome if cliente else ""
+    if tipo == "vencido":
+        mensagem = (
+            f"Ola, {nome}.\n\n"
+            "Consta pagamento em atraso referente a parcela ou parcelas abaixo:\n"
+            f"{chr(10).join(linhas)}\n\n"
+            f"Total em atraso: {formatar_moeda_whatsapp(total)}.\n\n"
+            "Por favor, regularize o pagamento assim que possivel. Qualquer duvida, estou a disposicao."
+        )
+    else:
+        mensagem = (
+            f"Ola, {nome}.\n\n"
+            "Passando para lembrar sobre o pagamento referente a parcela abaixo:\n"
+            f"{chr(10).join(linhas)}\n\n"
+            f"Valor total: {formatar_moeda_whatsapp(total)}.\n"
+            "O vencimento e a data cadastrada no pagamento. Qualquer duvida, estou a disposicao."
+        )
+    return f"https://wa.me/{numero}?text={quote(mensagem)}"
+
+
 def add_months(data, meses):
     mes = data.month - 1 + meses
     ano = data.year + mes // 12
@@ -92,12 +133,29 @@ def gerar_parcelas(venda, primeira_parcela):
             venda=venda,
             numero=numero,
             valor=valor,
+            valor_recebido=valor if venda.status == "pago" else Decimal("0.00"),
             vencimento=vencimento,
             lembrete_em=vencimento - timedelta(days=3),
             status="pago" if venda.status == "pago" else "pendente",
             data_pagamento=venda.data_venda if venda.status == "pago" else None,
         )
         restante -= valor
+
+
+def atualizar_status_venda(venda):
+    if venda.status == "cancelado":
+        return
+    total_recebido = venda.valor_pago
+    novo_status = "pago" if total_recebido >= venda.valor_total and venda.valor_total else "pendente"
+    if venda.status != novo_status:
+        venda.status = novo_status
+        venda.save(update_fields=["status", "atualizado_em"])
+    if hasattr(venda, "evento"):
+        evento = venda.evento
+        pagamento_recebido = novo_status == "pago"
+        if evento.pagamento_recebido != pagamento_recebido:
+            evento.pagamento_recebido = pagamento_recebido
+            evento.save(update_fields=["pagamento_recebido", "atualizado_em"])
 
 
 def formatar_data_planilha(valor):
@@ -252,11 +310,18 @@ def dashboard(request):
     fim_mes = hoje.replace(day=monthrange(hoje.year, hoje.month)[1])
     vendas_eventos = Venda.objects.filter(evento__isnull=False).exclude(status="cancelado")
     parcelas_eventos = Parcela.objects.filter(venda__evento__isnull=False).exclude(venda__status="cancelado")
-    receitas_recebidas = parcelas_eventos.filter(status="pago", data_pagamento__range=(inicio_mes, fim_mes)).aggregate(
-        total=Sum("valor")
+    eventos_com_adiantamento = Evento.objects.filter(venda__isnull=False, adiantamento__gt=0).exclude(
+        venda__status="cancelado"
+    )
+    adiantamentos_mes = eventos_com_adiantamento.filter(venda__data_venda__range=(inicio_mes, fim_mes)).aggregate(
+        total=Sum("adiantamento")
     )["total"] or 0
+    receitas_recebidas = parcelas_eventos.filter(data_pagamento__range=(inicio_mes, fim_mes)).aggregate(
+        total=Sum("valor_recebido")
+    )["total"] or 0
+    receitas_recebidas += adiantamentos_mes
     receitas_a_receber = parcelas_eventos.exclude(status="pago").aggregate(
-        total=Sum("valor")
+        total=Sum(F("valor") - F("valor_recebido"), output_field=DecimalField())
     )["total"] or 0
     despesas_pagas = Despesa.objects.filter(status="pago", data__range=(inicio_mes, fim_mes)).aggregate(total=Sum("valor"))[
         "total"
@@ -272,8 +337,11 @@ def dashboard(request):
         "clientes_mes": Cliente.objects.filter(criado_em__year=hoje.year, criado_em__month=hoje.month).count(),
         "vendas": vendas_eventos.count(),
         "receita_total": vendas_eventos.aggregate(total=Sum("valor_total"))["total"] or 0,
-        "receita_paga": parcelas_eventos.filter(status="pago").aggregate(total=Sum("valor"))["total"] or 0,
-        "pendente": parcelas_eventos.exclude(status="pago").aggregate(total=Sum("valor"))["total"] or 0,
+        "receita_paga": (parcelas_eventos.aggregate(total=Sum("valor_recebido"))["total"] or 0)
+        + (eventos_com_adiantamento.aggregate(total=Sum("adiantamento"))["total"] or 0),
+        "pendente": parcelas_eventos.exclude(status="pago").aggregate(
+            total=Sum(F("valor") - F("valor_recebido"), output_field=DecimalField())
+        )["total"] or 0,
         "receitas_recebidas": receitas_recebidas,
         "receitas_a_receber": receitas_a_receber,
         "despesas_pagas": despesas_pagas,
@@ -301,25 +369,41 @@ def dashboard(request):
     formas_pagamento = []
     formas_labels = dict(Venda.FORMA_CHOICES)
     formas_qs = (
-        parcelas_eventos.filter(status="pago", data_pagamento__range=(inicio_mes, fim_mes))
+        parcelas_eventos.filter(data_pagamento__range=(inicio_mes, fim_mes), valor_recebido__gt=0)
         .values("venda__forma_pagamento")
-        .annotate(total=Sum("valor"), quantidade=Count("id"))
+        .annotate(total=Sum("valor_recebido"), quantidade=Count("id"))
         .order_by("-total")
     )
+    formas_totais = {}
     for item in formas_qs:
+        forma = item["venda__forma_pagamento"]
+        formas_totais[forma] = {
+            "total": item["total"] or Decimal("0.00"),
+            "quantidade": item["quantidade"],
+        }
+    adiantamentos_formas_qs = (
+        eventos_com_adiantamento.filter(venda__data_venda__range=(inicio_mes, fim_mes))
+        .values("venda__forma_pagamento")
+        .annotate(total=Sum("adiantamento"), quantidade=Count("id"))
+    )
+    for item in adiantamentos_formas_qs:
+        forma = item["venda__forma_pagamento"]
+        total = formas_totais.setdefault(forma, {"total": Decimal("0.00"), "quantidade": 0})
+        total["total"] += item["total"] or Decimal("0.00")
+        total["quantidade"] += item["quantidade"]
+    for forma, item in sorted(formas_totais.items(), key=lambda valor: valor[1]["total"], reverse=True):
         formas_pagamento.append(
-            {
-                "nome": formas_labels.get(item["venda__forma_pagamento"], item["venda__forma_pagamento"]),
-                "total": item["total"] or 0,
-                "quantidade": item["quantidade"],
-            }
+            {"nome": formas_labels.get(forma, forma), "total": item["total"], "quantidade": item["quantidade"]}
         )
     meses = []
     for offset in range(5, -1, -1):
         mes_ref = add_months(inicio_mes, -offset)
         mes_fim = mes_ref.replace(day=monthrange(mes_ref.year, mes_ref.month)[1])
-        recebido = parcelas_eventos.filter(status="pago", data_pagamento__range=(mes_ref, mes_fim)).aggregate(
-            total=Sum("valor")
+        recebido = parcelas_eventos.filter(data_pagamento__range=(mes_ref, mes_fim)).aggregate(
+            total=Sum("valor_recebido")
+        )["total"] or 0
+        recebido += eventos_com_adiantamento.filter(venda__data_venda__range=(mes_ref, mes_fim)).aggregate(
+            total=Sum("adiantamento")
         )["total"] or 0
         pago = Despesa.objects.filter(status="pago", data__range=(mes_ref, mes_fim)).aggregate(total=Sum("valor"))[
             "total"
@@ -412,13 +496,13 @@ def financeiro(request):
         },
         "atrasados": {
             "titulo": "Clientes Em atraso",
-            "descricao": "A vista vencido ou boleto parcelado com pagamento em atraso.",
+            "descricao": "Eventos com parcela vencida ou pagamento parcial em atraso.",
             "status_painel": "vencido",
             "clientes": {},
         },
         "em_dia": {
             "titulo": "Clientes em dias",
-            "descricao": "Boleto parcelado com pagamentos dentro do prazo.",
+            "descricao": "Eventos com parcelas abertas dentro do prazo.",
             "status_painel": "pendente",
             "clientes": {},
         },
@@ -429,15 +513,15 @@ def financeiro(request):
         parcelas_vencidas = [
             parcela
             for parcela in parcelas
-            if parcela.status in ["pendente", "atrasado"] and parcela.vencimento < hoje
+            if parcela.status in ["pendente", "parcial", "atrasado"] and parcela.vencimento < hoje
         ]
-        boleto_parcelado = venda.forma_pagamento == "boleto" and venda.condicao_pagamento == "parcelado"
+        parcelas_abertas = [parcela for parcela in parcelas if parcela.status != "pago"]
 
         if venda.evento.pagamento_status == "pago":
             chave = "pagos"
         elif venda.evento.pagamento_status == "vencido":
             chave = "atrasados"
-        elif boleto_parcelado:
+        elif parcelas_abertas or venda.status == "pendente":
             chave = "em_dia"
         else:
             continue
@@ -465,7 +549,7 @@ def financeiro_cliente_painel(request, cliente_id):
     cliente = get_object_or_404(Cliente, pk=cliente_id)
     vendas = cliente.vendas.select_related("cliente", "evento").prefetch_related("parcelas")
     if status == "vencido":
-        vendas = vendas.filter(parcelas__status__in=["pendente", "atrasado"], parcelas__vencimento__lt=hoje).distinct()
+        vendas = vendas.filter(parcelas__status__in=["pendente", "parcial", "atrasado"], parcelas__vencimento__lt=hoje).distinct()
     elif status:
         vendas = vendas.filter(status=status)
     totais = vendas.exclude(status="cancelado").aggregate(total=Sum("valor_total"))["total"] or 0
@@ -505,6 +589,7 @@ def parcela_form(request, pk=None, venda_id=None):
         parcela = form.save(commit=False)
         parcela.venda = venda
         parcela.save()
+        atualizar_status_venda(venda)
         messages.success(request, "Parcela salva com sucesso.")
         return redirect("financeiro")
     return render(request, "crm/form.html", {"form": form, "titulo": f"Parcela - {venda}", "voltar": "financeiro"})
@@ -525,6 +610,12 @@ def alertas(request):
     parcelas = Parcela.objects.select_related("venda", "venda__cliente").exclude(status="pago").filter(
         Q(vencimento__lt=hoje) | Q(lembrete_em__lte=hoje)
     )
+    for parcela in parcelas:
+        parcela.whatsapp_url = link_whatsapp_parcelas(
+            parcela.venda.cliente,
+            [parcela],
+            "vencido" if parcela.status_financeiro == "vencido" else "lembrete",
+        )
     compromissos_hoje = list(
         Tarefa.objects.select_related("cliente", "evento", "evento__cliente").filter(data=hoje).order_by("hora", "titulo")
     )
@@ -949,9 +1040,10 @@ def cobrancas(request):
         venda__evento__isnull=False
     )
     grupos_base = [
-        ("vencidos", "Vencidos", "Parcelas em atraso que precisam de cobranca.", "vencido"),
-        ("pagos", "Pagos", "Parcelas recebidas e baixadas no financeiro.", "pago"),
-        ("a_receber", "A Receber", "Parcelas pendentes dentro do prazo.", "pendente"),
+        ("vencidos", "Vencidos", "", "vencido"),
+        ("parciais", "Parciais", "", "parcial"),
+        ("pagos", "Pagos", "", "pago"),
+        ("a_receber", "A Receber", "", "pendente"),
     ]
     grupos_cobrancas = []
     for codigo, titulo, descricao, status in grupos_base:
@@ -964,9 +1056,16 @@ def cobrancas(request):
                 {"cliente": cliente, "parcelas": [], "total": Decimal("0.00"), "vencidas": 0},
             )
             item["parcelas"].append(parcela)
-            item["total"] += parcela.valor
+            item["total"] += parcela.valor_recebido_efetivo if status == "pago" else parcela.valor_em_aberto
             if parcela.status_financeiro == "vencido":
                 item["vencidas"] += 1
+        for item in clientes.values():
+            if status == "vencido":
+                item["whatsapp_url"] = link_whatsapp_parcelas(item["cliente"], item["parcelas"], "vencido")
+            elif status in ["pendente", "parcial"]:
+                item["whatsapp_url"] = link_whatsapp_parcelas(item["cliente"], item["parcelas"], "lembrete")
+            else:
+                item["whatsapp_url"] = ""
         grupos_cobrancas.append(
             {
                 "codigo": codigo,
@@ -975,7 +1074,13 @@ def cobrancas(request):
                 "status": status,
                 "clientes": sorted(clientes.values(), key=lambda item: item["cliente"].nome.lower()),
                 "total": len(itens),
-                "valor_total": sum((parcela.valor for parcela in itens), Decimal("0.00")),
+                "valor_total": sum(
+                    (
+                        parcela.valor_recebido_efetivo if status == "pago" else parcela.valor_em_aberto
+                        for parcela in itens
+                    ),
+                    Decimal("0.00"),
+                ),
             }
         )
 
@@ -988,7 +1093,7 @@ def cobrancas(request):
             {"cliente": cliente, "parcelas": [], "total": Decimal("0.00"), "vencidas": 0},
         )
         item["parcelas"].append(parcela)
-        item["total"] += parcela.valor
+        item["total"] += parcela.valor_em_aberto
         if parcela.status_financeiro == "vencido":
             item["vencidas"] += 1
     return render(
@@ -1006,25 +1111,18 @@ def parcela_marcar_pago(request, pk):
     parcela = get_object_or_404(Parcela.objects.select_related("venda", "venda__evento"), pk=pk)
     if request.method == "POST":
         hoje = timezone.localdate()
-        parcela.status = "pago"
+        valor_baixa = decimal_brasileiro(request.POST.get("valor_recebido"))
+        if valor_baixa is None:
+            valor_baixa = parcela.valor_em_aberto or parcela.valor
+        parcela.valor_recebido = (parcela.valor_recebido or Decimal("0.00")) + valor_baixa
         parcela.data_pagamento = hoje
-        parcela.save(update_fields=["status", "data_pagamento"])
+        parcela.status = "pago" if parcela.valor_recebido >= parcela.valor else "parcial"
+        parcela.save(update_fields=["valor_recebido", "status", "data_pagamento"])
 
         venda = parcela.venda
-        todas_pagas = not venda.parcelas.exclude(status="pago").exists()
-        if todas_pagas:
-            venda.status = "pago"
-            venda.save(update_fields=["status", "atualizado_em"])
-        elif venda.status == "pago":
-            venda.status = "pendente"
-            venda.save(update_fields=["status", "atualizado_em"])
+        atualizar_status_venda(venda)
 
-        if hasattr(venda, "evento"):
-            evento = venda.evento
-            evento.pagamento_recebido = todas_pagas
-            evento.save(update_fields=["pagamento_recebido", "atualizado_em"])
-
-        messages.success(request, "Pagamento marcado como recebido.")
+        messages.success(request, "Recebimento registrado no financeiro.")
     return redirect(request.POST.get("next") or "cobrancas")
 
 
@@ -1136,8 +1234,13 @@ def aplicar_parcelas_evento(evento, parcelas):
         parcela.valor = item["valor"]
         parcela.vencimento = item["vencimento"]
         parcela.lembrete_em = item["vencimento"]
-        parcela.status = "pago" if evento.pagamento_recebido else "pendente"
-        parcela.data_pagamento = hoje if parcela.status == "pago" else None
+        if evento.pagamento_recebido:
+            parcela.valor_recebido = parcela.valor
+            parcela.status = "pago"
+            parcela.data_pagamento = hoje
+        elif not parcela.valor_recebido:
+            parcela.status = "pendente"
+            parcela.data_pagamento = None
         parcela.observacoes = "Informada no formulario de contrato do evento."
         parcela.save()
         parcelas_mantidas.append(parcela.pk)
@@ -1145,7 +1248,7 @@ def aplicar_parcelas_evento(evento, parcelas):
     venda.quantidade_parcelas = len(parcelas)
     venda.condicao_pagamento = "parcelado" if len(parcelas) > 1 else "avista"
     venda.valor_total = evento.valor_cobrado
-    venda.status = "pago" if evento.pagamento_recebido else "pendente"
+    venda.status = "pago" if venda.valor_pago >= venda.valor_total and venda.valor_total else "pendente"
     venda.save(update_fields=["quantidade_parcelas", "condicao_pagamento", "valor_total", "status", "atualizado_em"])
 
 
@@ -1186,6 +1289,10 @@ def relatorios(request):
     vendas_mes = Venda.objects.filter(evento__isnull=False).exclude(status="cancelado").filter(
         data_venda__range=(inicio_mes, fim_mes)
     )
+    parcelas_recebidas_mes = Parcela.objects.filter(
+        venda__evento__isnull=False,
+        data_pagamento__range=(inicio_mes, fim_mes),
+    )
     despesas_mes = Despesa.objects.filter(Q(data__range=(inicio_mes, fim_mes)) | Q(vencimento__range=(inicio_mes, fim_mes)))
     eventos_mes = Evento.objects.filter(
         Q(criado_em__date__range=(inicio_mes, fim_mes)) | Q(atualizado_em__date__range=(inicio_mes, fim_mes))
@@ -1193,7 +1300,7 @@ def relatorios(request):
     contexto = {
         "inicio_mes": inicio_mes,
         "fim_mes": fim_mes,
-        "receita_mes": vendas_mes.aggregate(total=Sum("valor_total"))["total"] or 0,
+        "receita_mes": parcelas_recebidas_mes.aggregate(total=Sum("valor_recebido"))["total"] or 0,
         "despesa_mes": despesas_mes.aggregate(total=Sum("valor"))["total"] or 0,
         "eventos_mes": eventos_mes.count(),
         "vendas_recentes": vendas_mes.select_related("cliente")[:8],
@@ -1210,13 +1317,13 @@ def evento_form(request, pk=None):
     if request.method == "POST" and form.is_valid():
         parcelas_post = parcelas_do_request(request, form)
     if request.method == "POST" and form.is_valid() and parcelas_post:
-        criando_evento = evento is None
+        acao = request.POST.get("acao") or "salvar"
         evento = form.save()
         aplicar_parcelas_evento(evento, parcelas_post)
-        documento_criado = getattr(form, "documento_criado", None)
-        if criando_evento and documento_criado:
-            messages.success(request, "Evento salvo e contrato gerado automaticamente.")
-            return redirect("eventos")
+        if acao == "gerar_contrato":
+            form.criar_documento_evento(evento)
+            messages.success(request, "Evento salvo. Contrato gerado no painel de documentos.")
+            return redirect("documentos")
         messages.success(request, "Evento salvo com sucesso.")
         if request.GET.get("proximo") == "cliente" and evento.cliente_id:
             oportunidade_id = request.GET.get("oportunidade")

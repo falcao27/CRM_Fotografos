@@ -24,7 +24,7 @@ class VendaAdmin(admin.ModelAdmin):
 
 @admin.register(Parcela)
 class ParcelaAdmin(admin.ModelAdmin):
-    list_display = ("venda", "numero", "valor", "vencimento", "status", "lembrete_em")
+    list_display = ("venda", "numero", "valor", "valor_recebido", "vencimento", "status", "lembrete_em")
     list_filter = ("status", "vencimento")
 
 

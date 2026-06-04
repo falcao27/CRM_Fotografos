@@ -5,70 +5,204 @@
 {% block page_subtitle %}Acompanhe pagamentos vencidos, pagos e a receber.{% endblock %}
 
 {% block content %}
-<section class="billing-groups">
+<section class="finance-groups billing-summary-grid" aria-label="Resumo de cobrancas">
   {% for grupo in grupos_cobrancas %}
-    <article class="panel billing-group {{ grupo.codigo }}">
-      <header class="billing-group-head">
-        <div>
-          <h2>{{ grupo.titulo }}</h2>
-          <small>{{ grupo.descricao }}</small>
-        </div>
-        <div class="billing-group-total">
-          <strong>{{ grupo.valor_total|brl }}</strong>
-          <span>{{ grupo.total }} parcela(s)</span>
-        </div>
-      </header>
+    <button
+      class="panel finance-group-trigger billing-summary-card {{ grupo.codigo }}"
+      type="button"
+      data-billing-target="billingGroup{{ forloop.counter }}"
+      aria-controls="billingGroup{{ forloop.counter }}"
+      aria-expanded="false"
+    >
+      <span>{{ grupo.titulo }}</span>
+      <small>{{ grupo.total }} parcela(s) - {{ grupo.valor_total|brl }}</small>
+      <strong>{{ grupo.total }}</strong>
+    </button>
+  {% endfor %}
+</section>
 
-      <div class="payment-accordion">
-        {% for item in grupo.clientes %}
-          <details class="payment-client{% if item.vencidas %} has-overdue{% endif %}">
-            <summary>
-              <div>
-                <strong>{{ item.cliente.nome }}</strong>
-                <small>{{ item.cliente.telefone|default:"Contato nao informado" }}{% if item.cliente.email %} - {{ item.cliente.email }}{% endif %}</small>
-                {% if item.vencidas %}
-                  <small class="overdue-text">{{ item.vencidas }} pagamento(s) vencido(s)</small>
-                {% endif %}
-              </div>
-              <div class="payment-summary-values">
-                <span class="badge {{ grupo.status }}">{{ grupo.titulo }}</span>
-                <span>{{ item.total|brl }}</span>
-              </div>
-            </summary>
-
-            <div class="payment-details">
-              {% for parcela in item.parcelas %}
-                <div class="payment-detail-row{% if parcela.status_financeiro == 'vencido' %} overdue{% endif %}">
-                  <div>
-                    <strong>Parcela {{ parcela.numero }}/{{ parcela.venda.quantidade_parcelas }}</strong>
-                    <small>{{ parcela.venda.titulo }}</small>
-                    <small>Contato: {{ parcela.venda.cliente.telefone|default:"Nao informado" }}{% if parcela.venda.cliente.email %} - {{ parcela.venda.cliente.email }}{% endif %}</small>
-                    {% if parcela.status_financeiro == "vencido" %}
-                      <small class="overdue-text">Pagamento vencido. Cobrar cliente.</small>
-                    {% endif %}
-                  </div>
-                  <div>
-                    <b>{{ parcela.valor|brl }}</b>
-                    <small>Vence {{ parcela.vencimento|date:"d/m/Y" }}</small>
-                    {% if parcela.data_pagamento %}<small>Pago em {{ parcela.data_pagamento|date:"d/m/Y" }}</small>{% endif %}
-                    <span class="badge {{ parcela.status_financeiro }}">{{ parcela.status_financeiro_label }}</span>
-                  </div>
-                  {% if parcela.status != "pago" %}
-                    <form class="inline-form" method="post" action="{% url 'parcela_marcar_pago' parcela.pk %}">
-                      {% csrf_token %}
-                      <input type="hidden" name="next" value="{% url 'cobrancas' %}">
-                      <button class="button ghost" type="submit"><i data-lucide="check"></i>Pago</button>
-                    </form>
+<section class="billing-panels finance-group-popups" aria-live="polite">
+  {% for grupo in grupos_cobrancas %}
+    <article class="panel billing-group finance-group-panel {{ grupo.codigo }}" id="billingGroup{{ forloop.counter }}" hidden>
+      <button class="modal-close finance-group-close" type="button" data-billing-close aria-label="Fechar">
+        <i data-lucide="x"></i>
+      </button>
+      <div class="billing-panel-head">
+        <h2>{{ grupo.titulo }}</h2>
+        <span class="billing-group-total">
+          <strong>{{ grupo.total }}</strong>
+          <span>{{ grupo.valor_total|brl }}</span>
+        </span>
+      </div>
+      <div class="table-wrap billing-client-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Nome</th>
+              <th>Contato</th>
+              <th>Parcelas</th>
+              <th>Valor</th>
+              <th>Status</th>
+              <th>Acoes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in grupo.clientes %}
+              <tr
+                class="billing-client-row{% if item.vencidas %} has-overdue{% endif %}"
+                role="button"
+                tabindex="0"
+                data-payment-target="paymentDetails{{ forloop.parentloop.counter }}_{{ forloop.counter }}"
+                aria-controls="paymentDetails{{ forloop.parentloop.counter }}_{{ forloop.counter }}"
+                aria-expanded="false"
+              >
+                <td>
+                  <strong>{{ item.cliente.nome }}</strong>
+                  {% if item.vencidas %}<br><small class="overdue-text">{{ item.vencidas }} pagamento(s) vencido(s)</small>{% endif %}
+                </td>
+                <td>{{ item.cliente.telefone|default:"Contato nao informado" }}<br><small>{{ item.cliente.email }}</small></td>
+                <td>{{ item.parcelas|length }} parcela(s)</td>
+                <td><strong>{{ item.total|brl }}</strong></td>
+                <td><span class="badge {{ grupo.status }}">{{ grupo.titulo }}</span></td>
+                <td class="actions">
+                  {% if item.whatsapp_url %}
+                    <a
+                      class="icon-link"
+                      href="{{ item.whatsapp_url }}"
+                      target="_blank"
+                      rel="noopener"
+                      title="Abrir WhatsApp com mensagem pronta"
+                    >
+                      <i data-lucide="message-circle"></i>
+                    </a>
                   {% endif %}
-                </div>
-              {% endfor %}
-            </div>
-          </details>
-        {% empty %}
-          <p class="empty">Nenhuma parcela neste grupo.</p>
-        {% endfor %}
+                  <button class="icon-link" type="button" title="Abrir parcelas" data-payment-open>
+                    <i data-lucide="chevron-down"></i>
+                  </button>
+                </td>
+              </tr>
+              <tr class="billing-client-details-row" id="paymentDetails{{ forloop.parentloop.counter }}_{{ forloop.counter }}" hidden>
+                <td colspan="6">
+                  <div class="payment-details">
+                    {% for parcela in item.parcelas %}
+                      <div class="payment-detail-row{% if parcela.status_financeiro == 'vencido' %} overdue{% endif %}">
+                        <div>
+                          <strong>Parcela {{ parcela.numero }}/{{ parcela.venda.quantidade_parcelas }}</strong>
+                          <small>{{ parcela.venda.titulo }}</small>
+                          <small>Contato: {{ parcela.venda.cliente.telefone|default:"Nao informado" }}{% if parcela.venda.cliente.email %} - {{ parcela.venda.cliente.email }}{% endif %}</small>
+                          {% if parcela.status_financeiro == "vencido" %}
+                            <small class="overdue-text">Pagamento vencido. Cobrar cliente.</small>
+                          {% endif %}
+                        </div>
+                        <div>
+                          <b>{{ parcela.valor_em_aberto|brl }}</b>
+                          <small>Contrato {{ parcela.valor|brl }}</small>
+                          <small>Recebido {{ parcela.valor_recebido_efetivo|brl }}</small>
+                          <small>Vence {{ parcela.vencimento|date:"d/m/Y" }}</small>
+                          {% if parcela.data_pagamento %}<small>Pago em {{ parcela.data_pagamento|date:"d/m/Y" }}</small>{% endif %}
+                          <span class="badge {{ parcela.status_financeiro }}">{{ parcela.status_financeiro_label }}</span>
+                        </div>
+                        {% if parcela.status != "pago" %}
+                          <form class="inline-form payment-register-form" method="post" action="{% url 'parcela_marcar_pago' parcela.pk %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{% url 'cobrancas' %}">
+                            <label class="payment-inline-field">
+                              <span>Recebido</span>
+                              <input type="text" name="valor_recebido" value="{{ parcela.valor_em_aberto|moeda_input }}" inputmode="decimal">
+                            </label>
+                            <button class="button ghost" type="submit"><i data-lucide="check"></i>Registrar</button>
+                          </form>
+                        {% endif %}
+                      </div>
+                    {% endfor %}
+                  </div>
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="6">Nenhuma parcela neste grupo.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     </article>
   {% endfor %}
 </section>
+
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    function refreshIcons() {
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    function closeClientRows(panel) {
+      panel.querySelectorAll(".billing-client-details-row").forEach(function (details) {
+        details.hidden = true;
+      });
+      panel.querySelectorAll("[data-payment-target]").forEach(function (row) {
+        row.setAttribute("aria-expanded", "false");
+        row.classList.remove("open");
+      });
+    }
+
+    function closePanels() {
+      document.querySelectorAll(".billing-group").forEach(function (panel) {
+        panel.hidden = true;
+        closeClientRows(panel);
+      });
+      document.querySelectorAll("[data-billing-target]").forEach(function (button) {
+        button.setAttribute("aria-expanded", "false");
+        button.classList.remove("active");
+      });
+    }
+
+    document.querySelectorAll("[data-billing-target]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        const panel = document.getElementById(button.dataset.billingTarget);
+        const shouldOpen = panel && panel.hidden;
+        if (!panel) return;
+        closePanels();
+        if (shouldOpen) {
+          panel.hidden = false;
+          button.setAttribute("aria-expanded", "true");
+          button.classList.add("active");
+          refreshIcons();
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-billing-close]").forEach(function (button) {
+      button.addEventListener("click", closePanels);
+    });
+
+    function toggleClient(row) {
+      const details = document.getElementById(row.dataset.paymentTarget);
+      if (!details) return;
+      const shouldOpen = details.hidden;
+      details.hidden = !shouldOpen;
+      row.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+      row.classList.toggle("open", shouldOpen);
+      refreshIcons();
+    }
+
+    document.querySelectorAll("[data-payment-target]").forEach(function (row) {
+      row.addEventListener("click", function (event) {
+        if (event.target.closest("a, button, input, form, label")) return;
+        toggleClient(row);
+      });
+      row.addEventListener("keydown", function (event) {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        toggleClient(row);
+      });
+    });
+
+    document.querySelectorAll("[data-payment-open]").forEach(function (button) {
+      button.addEventListener("click", function (event) {
+        event.stopPropagation();
+        const row = button.closest("[data-payment-target]");
+        if (row) toggleClient(row);
+      });
+    });
+  });
+</script>
 {% endblock %}
