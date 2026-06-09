@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block page_title %}Clientes Admin{% endblock %}
+{% block page_subtitle %}Empresas que utilizam o CRM.{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <div class="panel-head"><h2>Clientes do CRM</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Empresa</th><th>Email</th><th>Acessos</th><th>Usuarios</th><th>Acoes</th></tr></thead>
+      <tbody>
+        {% for empresa in empresas %}
+          <tr>
+            <td><strong>{{ empresa.nome }}</strong></td>
+            <td>{{ empresa.email|default:"-" }}</td>
+            <td>{{ empresa.total_acessos }}</td>
+            <td>{{ empresa.usuarios.count }}</td>
+            <td><a class="button ghost compact-button" href="{% url 'admin_acessar_cliente' empresa.pk %}"><i data-lucide="log-in"></i>Acessar painel</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5">Nenhuma empresa cadastrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

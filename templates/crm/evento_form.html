@@ -138,6 +138,11 @@
             {{ form.adiantamento }}
             {% for error in form.adiantamento.errors %}<em>{{ error }}</em>{% endfor %}
           </label>
+          <label class="toggle-line">
+            {{ form.adiantamento_pago }}
+            <span>{{ form.adiantamento_pago.label }}: sim</span>
+            {% for error in form.adiantamento_pago.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
           <label>
             <span>Valor restante</span>
             <input type="text" id="id_valor_restante_contrato" value="" readonly>

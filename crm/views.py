@@ -10,6 +10,8 @@ from urllib.parse import quote
 from xml.etree import ElementTree as ET
 
 from django.contrib import messages
+from django.contrib.auth import authenticate, login as session_login, logout as session_logout
+from django.contrib.auth.models import User
 from django.db import transaction
 from django.http import HttpResponse
 from django.db.models import Case, Count, DecimalField, F, Q, Sum, When
@@ -18,10 +20,13 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .forms import (
+    AdminCompromissoForm,
     ClienteForm,
     calcular_proxima_oportunidade,
+    ContratoAdminEmpresaForm,
     DespesaForm,
     DocumentoForm,
+    EmpresaAdminForm,
     EventoForm,
     OportunidadeForm,
     ParcelaForm,
@@ -31,18 +36,24 @@ from .forms import (
 )
 from .models import (
     CONTRATO_FESTA_INFANTIL_TEMPLATE,
+    AcessoUsuario,
+    AdminCompromisso,
     Cliente,
+    ContratoAdminEmpresa,
     Despesa,
     Documento,
+    Empresa,
     Evento,
     LembreteAnual,
     Oportunidade,
     OportunidadePerdida,
     Parcela,
+    PerfilUsuario,
     Tarefa,
     Venda,
 )
-from .pdf import gerar_pdf_documento, gerar_pdf_relatorio_despesas, nome_pdf_documento
+from .auth_jwt import JWT_COOKIE_NAME, JWT_MAX_AGE, gerar_token
+from .pdf import gerar_pdf_documento, gerar_pdf_relatorio_despesas, gerar_pdf_relatorio_simples, nome_pdf_documento
 from .services import EnvioDocumentoError, enviar_documento, link_whatsapp_manual, normalizar_whatsapp
 
 
@@ -304,15 +315,362 @@ def normalizar_cabecalho(valor):
     return "".join(caractere for caractere in texto if not unicodedata.combining(caractere))
 
 
+def data_financeira_despesa(despesa):
+    return despesa.vencimento or despesa.data
+
+
+def filtro_data_financeira_despesa(inicio, fim):
+    return Q(vencimento__range=(inicio, fim)) | Q(vencimento__isnull=True, data__range=(inicio, fim))
+
+
+def total_brl(valor):
+    return f"{Decimal(valor or 0):.2f}".replace(".", ",")
+
+
+def usuario_admin_master(user):
+    perfil = getattr(user, "perfil_crm", None)
+    return bool(user.is_superuser or (perfil and perfil.admin_master))
+
+
+def empresa_atual(request):
+    perfil = getattr(request.user, "perfil_crm", None)
+    return perfil.empresa if perfil and not perfil.admin_master else None
+
+
+def filtrar_empresa(qs, request):
+    empresa = empresa_atual(request)
+    if not empresa:
+        return qs
+    return qs.filter(empresa=empresa)
+
+
+def filtrar_parcelas_empresa(qs, request):
+    empresa = empresa_atual(request)
+    if not empresa:
+        return qs
+    return qs.filter(venda__empresa=empresa)
+
+
+def atribuir_empresa(obj, request):
+    empresa = empresa_atual(request)
+    if empresa and hasattr(obj, "empresa_id") and not obj.empresa_id:
+        obj.empresa = empresa
+    return obj
+
+
+def exigir_admin_master(request):
+    if usuario_admin_master(request.user):
+        return None
+    messages.error(request, "Acesso permitido apenas para o admin master.")
+    return redirect("dashboard")
+
+
+def login_view(request):
+    if request.user.is_authenticated:
+        return redirect("dashboard")
+
+    if request.method == "POST":
+        username = request.POST.get("username", "").strip()
+        password = request.POST.get("password", "")
+        tipo_login = request.POST.get("tipo_login", "cliente")
+        user = authenticate(request, username=username, password=password)
+        if user and user.is_active:
+            perfil, _ = PerfilUsuario.objects.get_or_create(user=user)
+            admin_master = user.is_superuser or perfil.admin_master
+            if tipo_login == "admin" and not admin_master:
+                messages.error(request, "Este acesso nao pertence ao admin.")
+                return render(request, "crm/login.html", {"next": request.GET.get("next", ""), "tipo_login": tipo_login})
+            if tipo_login == "cliente" and admin_master:
+                messages.error(request, "Use o acesso de admin para este usuario.")
+                return render(request, "crm/login.html", {"next": request.GET.get("next", ""), "tipo_login": tipo_login})
+            session_login(request, user)
+            destino = "admin_master" if admin_master else "dashboard"
+            response = redirect(request.POST.get("next") or request.GET.get("next") or destino)
+            response.set_cookie(
+                JWT_COOKIE_NAME,
+                gerar_token(user),
+                max_age=JWT_MAX_AGE,
+                httponly=True,
+                samesite="Lax",
+                secure=request.is_secure(),
+            )
+            return response
+        messages.error(request, "Usuario ou senha invalidos.")
+
+    tipo_login = request.GET.get("tipo", "cliente")
+    if tipo_login not in ["cliente", "admin"]:
+        tipo_login = "cliente"
+    return render(request, "crm/login.html", {"next": request.GET.get("next", ""), "tipo_login": tipo_login})
+
+
+def logout_view(request):
+    session_logout(request)
+    response = redirect("login")
+    response.delete_cookie(JWT_COOKIE_NAME)
+    return response
+
+
+def cadastro_usuario(request):
+    if request.method == "POST":
+        empresa_nome = request.POST.get("empresa", "").strip()
+        nome = request.POST.get("nome", "").strip()
+        email = request.POST.get("email", "").strip()
+        username = request.POST.get("username", "").strip()
+        password = request.POST.get("password", "")
+
+        if not all([empresa_nome, nome, username, password]):
+            messages.error(request, "Preencha empresa, nome, usuario e senha.")
+        elif User.objects.filter(username=username).exists():
+            messages.error(request, "Este usuario ja existe.")
+        else:
+            empresa = Empresa.objects.create(nome=empresa_nome, email=email)
+            user = User.objects.create_user(username=username, password=password, email=email, first_name=nome, is_staff=True)
+            PerfilUsuario.objects.create(user=user, empresa=empresa, papel="empresa_admin")
+            messages.success(request, "Cadastro criado. Agora faca login.")
+            return redirect("login")
+
+    return render(request, "crm/cadastro.html")
+
+
+def admin_master(request):
+    bloqueio = exigir_admin_master(request)
+    if bloqueio:
+        return bloqueio
+
+    try:
+        dias_acesso = int(request.GET.get("dias", 7))
+    except ValueError:
+        dias_acesso = 7
+    dias_acesso = min(max(dias_acesso, 1), 365)
+    inicio_acessos = timezone.now() - timedelta(days=dias_acesso)
+
+    ranking = (
+        Empresa.objects.annotate(total_acessos=Count("acessos"))
+        .order_by("-total_acessos", "nome")
+    )
+    contexto = {
+        "ranking_empresas": ranking,
+        "acessos": AcessoUsuario.objects.select_related("user", "empresa").filter(criado_em__gte=inicio_acessos)[:50],
+        "dias_acesso": dias_acesso,
+        "acesso_modal_aberto": request.GET.get("acessos") == "1",
+    }
+    return render(request, "crm/admin_master.html", contexto)
+
+
+def admin_financeiro(request):
+    bloqueio = exigir_admin_master(request)
+    if bloqueio:
+        return bloqueio
+    contratos = ContratoAdminEmpresa.objects.select_related("empresa")
+    contexto = {
+        "contratos": contratos,
+        "total_valor": contratos.aggregate(total=Sum("valor"))["total"] or Decimal("0.00"),
+        "total_pago": contratos.filter(status="pago").aggregate(total=Sum("valor"))["total"] or Decimal("0.00"),
+        "total_pendente": contratos.exclude(status="pago").aggregate(total=Sum("valor"))["total"] or Decimal("0.00"),
+    }
+    return render(request, "crm/admin_financeiro.html", contexto)
+
+
+def admin_empresa_form(request):
+    bloqueio = exigir_admin_master(request)
+    if bloqueio:
+        return bloqueio
+    form = EmpresaAdminForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Cliente/empresa cadastrado.")
+        return redirect("admin_financeiro")
+    return render(request, "crm/form.html", {"form": form, "titulo": "Cliente/empresa admin", "voltar": "admin_financeiro"})
+
+
+def admin_contrato_form(request):
+    bloqueio = exigir_admin_master(request)
+    if bloqueio:
+        return bloqueio
+    form = ContratoAdminEmpresaForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Contrato administrativo cadastrado.")
+        return redirect("admin_financeiro")
+    return render(request, "crm/form.html", {"form": form, "titulo": "Contrato administrativo", "voltar": "admin_financeiro"})
+
+
+def admin_relatorios(request):
+    bloqueio = exigir_admin_master(request)
+    if bloqueio:
+        return bloqueio
+    hoje = timezone.localdate()
+    inicio_mes = hoje.replace(day=1)
+    fim_mes = hoje.replace(day=monthrange(hoje.year, hoje.month)[1])
+    contratos_mes = ContratoAdminEmpresa.objects.filter(vencimento__range=(inicio_mes, fim_mes)).select_related("empresa")
+    contexto = {
+        "inicio_mes": inicio_mes,
+        "fim_mes": fim_mes,
+        "receita_mes": contratos_mes.filter(status="pago").aggregate(total=Sum("valor"))["total"] or Decimal("0.00"),
+        "vendas_recentes": contratos_mes.order_by("-criado_em")[:8],
+    }
+    return render(request, "crm/admin_relatorios.html", contexto)
+
+
+def admin_agenda(request):
+    bloqueio = exigir_admin_master(request)
+    if bloqueio:
+        return bloqueio
+    hoje = timezone.localdate()
+    data_param = request.GET.get("data", "") or request.GET.get("semana", "")
+    try:
+        data_ref = date.fromisoformat(data_param)
+    except ValueError:
+        data_ref = hoje
+
+    inicio_semana = data_ref - timedelta(days=(data_ref.weekday() + 1) % 7)
+    fim_semana = inicio_semana + timedelta(days=6)
+    inicio_mes = data_ref.replace(day=1)
+    fim_mes = inicio_mes.replace(day=monthrange(inicio_mes.year, inicio_mes.month)[1])
+    horas_grade = list(range(7, 24))
+    compromissos = AdminCompromisso.objects.select_related("empresa").filter(data__range=(inicio_semana, fim_semana))
+    tons_tipo = {"reuniao": "reuniao", "cobranca": "pagamento", "suporte": "entrega", "tarefa": "tarefa"}
+    compromissos_mes = AdminCompromisso.objects.filter(data__range=(inicio_mes, fim_mes))
+    tons_por_dia_mes = {}
+    for compromisso in compromissos_mes:
+        tom = tons_tipo.get(compromisso.tipo, "tarefa")
+        tons = tons_por_dia_mes.setdefault(compromisso.data, [])
+        if tom not in tons:
+            tons.append(tom)
+
+    compromissos_por_dia = {inicio_semana + timedelta(days=offset): [] for offset in range(7)}
+    for compromisso in compromissos:
+        compromissos_por_dia.setdefault(compromisso.data, []).append(compromisso)
+
+    dias_semana = []
+    for dia, compromissos_dia in compromissos_por_dia.items():
+        itens_horario = []
+        itens_sem_hora = []
+        for compromisso in compromissos_dia:
+            item = {"compromisso": compromisso, "tom": tons_tipo.get(compromisso.tipo, "tarefa")}
+            if compromisso.hora:
+                minutos = (compromisso.hora.hour - horas_grade[0]) * 60 + compromisso.hora.minute
+                item["style"] = f"top: {max(minutos, 0) * 30 / 60:.0f}px; min-height: 30px;"
+                itens_horario.append(item)
+            else:
+                itens_sem_hora.append(item)
+        dias_semana.append(
+            {
+                "data": dia,
+                "iso": dia.isoformat(),
+                "numero": dia.day,
+                "semana": ["Dom.", "Seg.", "Ter.", "Qua.", "Qui.", "Sex.", "Sab."][(dia.weekday() + 1) % 7],
+                "hoje": dia == hoje,
+                "itens_horario": itens_horario,
+                "itens_sem_hora": itens_sem_hora,
+            }
+        )
+
+    calendario = Calendar(firstweekday=6)
+    mini_calendario = []
+    for semana in calendario.monthdatescalendar(data_ref.year, data_ref.month):
+        mini_calendario.append(
+            [
+                {
+                    "data": dia,
+                    "iso": dia.isoformat(),
+                    "numero": dia.day,
+                    "no_mes": dia.month == data_ref.month,
+                    "hoje": dia == hoje,
+                    "selecionado": dia == data_ref,
+                    "tons": tons_por_dia_mes.get(dia, []),
+                }
+                for dia in semana
+            ]
+        )
+    contexto = {
+        "hoje_iso": hoje.isoformat(),
+        "semana_anterior": (inicio_semana - timedelta(days=7)).isoformat(),
+        "semana_proxima": (inicio_semana + timedelta(days=7)).isoformat(),
+        "semana_titulo": f"{inicio_semana:%d/%m} ate {fim_semana:%d/%m/%Y}",
+        "mes_titulo": f"{MESES_PT[data_ref.month - 1]} {data_ref.year}",
+        "mini_calendario": mini_calendario,
+        "dias_semana": dias_semana,
+        "horas_grade": horas_grade,
+    }
+    return render(request, "crm/admin_agenda.html", contexto)
+
+
+def admin_compromisso_form(request):
+    bloqueio = exigir_admin_master(request)
+    if bloqueio:
+        return bloqueio
+    form = AdminCompromissoForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Compromisso administrativo cadastrado.")
+        return redirect("admin_agenda")
+    return render(request, "crm/form.html", {"form": form, "titulo": "Compromisso admin", "voltar": "admin_agenda"})
+
+
+def admin_clientes(request):
+    bloqueio = exigir_admin_master(request)
+    if bloqueio:
+        return bloqueio
+    empresas = Empresa.objects.prefetch_related("usuarios__user").annotate(total_acessos=Count("acessos"))
+    return render(request, "crm/admin_clientes.html", {"empresas": empresas})
+
+
+def admin_cobrancas(request):
+    bloqueio = exigir_admin_master(request)
+    if bloqueio:
+        return bloqueio
+    contratos = ContratoAdminEmpresa.objects.exclude(status="pago").select_related("empresa")
+    return render(request, "crm/admin_cobrancas.html", {"contratos": contratos})
+
+
+def admin_banco(request):
+    bloqueio = exigir_admin_master(request)
+    if bloqueio:
+        return bloqueio
+    return render(request, "crm/admin_banco.html")
+
+
+def admin_acessar_cliente(request, empresa_id):
+    bloqueio = exigir_admin_master(request)
+    if bloqueio:
+        return bloqueio
+    empresa = get_object_or_404(Empresa, pk=empresa_id)
+    perfil_cliente = (
+        PerfilUsuario.objects.select_related("user")
+        .filter(empresa=empresa, papel__in=["empresa_admin", "empresa_usuario"], user__is_active=True)
+        .first()
+    )
+    if not perfil_cliente:
+        messages.error(request, "Esta empresa ainda nao tem usuario ativo.")
+        return redirect("admin_clientes")
+    session_login(request, perfil_cliente.user)
+    response = redirect("dashboard")
+    response.set_cookie(
+        JWT_COOKIE_NAME,
+        gerar_token(perfil_cliente.user),
+        max_age=JWT_MAX_AGE,
+        httponly=True,
+        samesite="Lax",
+        secure=request.is_secure(),
+    )
+    return response
+
+
 def dashboard(request):
     hoje = timezone.localdate()
     inicio_mes = hoje.replace(day=1)
     fim_mes = hoje.replace(day=monthrange(hoje.year, hoje.month)[1])
-    vendas_eventos = Venda.objects.filter(evento__isnull=False).exclude(status="cancelado")
-    parcelas_eventos = Parcela.objects.filter(venda__evento__isnull=False).exclude(venda__status="cancelado")
-    eventos_com_adiantamento = Evento.objects.filter(venda__isnull=False, adiantamento__gt=0).exclude(
-        venda__status="cancelado"
+    filtro_receita = request.GET.get("receita", "mes")
+    if filtro_receita not in ["mes", "todos"]:
+        filtro_receita = "mes"
+    vendas_eventos = filtrar_empresa(Venda.objects.filter(evento__isnull=False), request).exclude(status="cancelado")
+    parcelas_eventos = filtrar_parcelas_empresa(
+        Parcela.objects.filter(venda__evento__isnull=False).exclude(venda__status="cancelado"), request
     )
+    eventos_com_adiantamento = filtrar_empresa(
+        Evento.objects.filter(venda__isnull=False, adiantamento__gt=0, adiantamento_pago=True), request
+    ).exclude(venda__status="cancelado")
     adiantamentos_mes = eventos_com_adiantamento.filter(venda__data_venda__range=(inicio_mes, fim_mes)).aggregate(
         total=Sum("adiantamento")
     )["total"] or 0
@@ -320,28 +678,44 @@ def dashboard(request):
         total=Sum("valor_recebido")
     )["total"] or 0
     receitas_recebidas += adiantamentos_mes
-    receitas_a_receber = parcelas_eventos.exclude(status="pago").aggregate(
+    receitas_a_receber = (
+        parcelas_eventos.exclude(status="pago")
+        .filter(vencimento__range=(inicio_mes, fim_mes))
+        .aggregate(total=Sum(F("valor") - F("valor_recebido"), output_field=DecimalField()))["total"]
+        or 0
+    )
+    receitas_recebidas_todos = (parcelas_eventos.aggregate(total=Sum("valor_recebido"))["total"] or 0) + (
+        eventos_com_adiantamento.aggregate(total=Sum("adiantamento"))["total"] or 0
+    )
+    receitas_a_receber_todos = parcelas_eventos.exclude(status="pago").aggregate(
         total=Sum(F("valor") - F("valor_recebido"), output_field=DecimalField())
     )["total"] or 0
-    despesas_pagas = Despesa.objects.filter(status="pago", data__range=(inicio_mes, fim_mes)).aggregate(total=Sum("valor"))[
-        "total"
-    ] or 0
-    despesas_a_pagar = Despesa.objects.exclude(status="pago").filter(
-        Q(vencimento__range=(inicio_mes, fim_mes)) | Q(data__range=(inicio_mes, fim_mes))
-    ).aggregate(total=Sum("valor"))["total"] or 0
+    receita_total_eventos = vendas_eventos.aggregate(total=Sum("valor_total"))["total"] or 0
+    if filtro_receita == "todos":
+        receitas_recebidas = receitas_recebidas_todos
+        receitas_a_receber = receitas_a_receber_todos
+    despesas_pagas = (
+        filtrar_empresa(Despesa.objects.filter(status="pago"), request)
+        .filter(filtro_data_financeira_despesa(inicio_mes, fim_mes))
+        .aggregate(total=Sum("valor"))["total"]
+        or 0
+    )
+    despesas_a_pagar = (
+        filtrar_empresa(Despesa.objects.exclude(status="pago"), request)
+        .filter(filtro_data_financeira_despesa(inicio_mes, fim_mes))
+        .aggregate(total=Sum("valor"))["total"]
+        or 0
+    )
     saldo_atual = receitas_recebidas - despesas_pagas
     saldo_previsto = (receitas_recebidas + receitas_a_receber) - (despesas_pagas + despesas_a_pagar)
-    tarefas_mes = Tarefa.objects.filter(data__range=(inicio_mes, fim_mes))
+    tarefas_mes = filtrar_empresa(Tarefa.objects.filter(data__range=(inicio_mes, fim_mes)), request)
     totais = {
-        "clientes": Cliente.objects.count(),
-        "clientes_mes": Cliente.objects.filter(criado_em__year=hoje.year, criado_em__month=hoje.month).count(),
+        "clientes": filtrar_empresa(Cliente.objects, request).count(),
+        "clientes_mes": filtrar_empresa(Cliente.objects.filter(criado_em__year=hoje.year, criado_em__month=hoje.month), request).count(),
         "vendas": vendas_eventos.count(),
-        "receita_total": vendas_eventos.aggregate(total=Sum("valor_total"))["total"] or 0,
-        "receita_paga": (parcelas_eventos.aggregate(total=Sum("valor_recebido"))["total"] or 0)
-        + (eventos_com_adiantamento.aggregate(total=Sum("adiantamento"))["total"] or 0),
-        "pendente": parcelas_eventos.exclude(status="pago").aggregate(
-            total=Sum(F("valor") - F("valor_recebido"), output_field=DecimalField())
-        )["total"] or 0,
+        "receita_total": receita_total_eventos,
+        "receita_paga": receitas_recebidas_todos,
+        "pendente": receitas_a_receber_todos,
         "receitas_recebidas": receitas_recebidas,
         "receitas_a_receber": receitas_a_receber,
         "despesas_pagas": despesas_pagas,
@@ -349,20 +723,20 @@ def dashboard(request):
         "saldo_atual": saldo_atual,
         "saldo_previsto": saldo_previsto,
         "contratos_mes": vendas_eventos.filter(data_venda__range=(inicio_mes, fim_mes)).count(),
-        "trabalhos_mes": Evento.objects.filter(data_festa__range=(inicio_mes, fim_mes)).count(),
-        "tarefas_pendentes": Tarefa.objects.filter(status="pendente").count(),
-        "tarefas_atrasadas": Tarefa.objects.filter(Q(status="atrasada") | Q(status="pendente", data__lt=hoje)).count(),
-        "oportunidades": Oportunidade.objects.exclude(etapa__in=["fechado", "perdido"]).count(),
-        "docs_pendentes": Documento.objects.filter(status="pendente").count(),
-        "formularios_recebidos": Cliente.objects.filter(criado_em__date__gte=hoje - timedelta(days=30)).count(),
+        "trabalhos_mes": filtrar_empresa(Evento.objects.filter(data_festa__range=(inicio_mes, fim_mes)), request).count(),
+        "tarefas_pendentes": filtrar_empresa(Tarefa.objects.filter(status="pendente"), request).count(),
+        "tarefas_atrasadas": filtrar_empresa(Tarefa.objects.filter(Q(status="atrasada") | Q(status="pendente", data__lt=hoje)), request).count(),
+        "oportunidades": filtrar_empresa(Oportunidade.objects.exclude(etapa__in=["fechado", "perdido"]), request).count(),
+        "docs_pendentes": filtrar_empresa(Documento.objects.filter(status="pendente"), request).count(),
+        "formularios_recebidos": filtrar_empresa(Cliente.objects.filter(criado_em__date__gte=hoje - timedelta(days=30)), request).count(),
     }
     parcelas_alerta = parcelas_eventos.exclude(status="pago").filter(
         Q(vencimento__lt=hoje) | Q(lembrete_em__lte=hoje)
     )[:8]
-    recompra_alerta = [cliente for cliente in Cliente.objects.all() if cliente.precisa_alerta_recompra][:8]
+    recompra_alerta = [cliente for cliente in filtrar_empresa(Cliente.objects.all(), request) if cliente.precisa_alerta_recompra][:8]
     ultimas_vendas = vendas_eventos.select_related("cliente").prefetch_related("parcelas")[:8]
-    tarefas_semana = Tarefa.objects.select_related("cliente").filter(data__range=(hoje, hoje + timedelta(days=7)))[:5]
-    ultimos_lancamentos = list(Despesa.objects.all()[:4]) + list(vendas_eventos.select_related("cliente")[:4])
+    tarefas_semana = filtrar_empresa(Tarefa.objects.select_related("cliente").filter(data__range=(hoje, hoje + timedelta(days=7))), request)[:5]
+    ultimos_lancamentos = list(filtrar_empresa(Despesa.objects.all(), request)[:4]) + list(vendas_eventos.select_related("cliente")[:4])
     concluidas = tarefas_mes.filter(status="concluida").count()
     total_tarefas_mes = tarefas_mes.count()
     progresso_tarefas = round((concluidas / total_tarefas_mes) * 100) if total_tarefas_mes else 0
@@ -405,9 +779,12 @@ def dashboard(request):
         recebido += eventos_com_adiantamento.filter(venda__data_venda__range=(mes_ref, mes_fim)).aggregate(
             total=Sum("adiantamento")
         )["total"] or 0
-        pago = Despesa.objects.filter(status="pago", data__range=(mes_ref, mes_fim)).aggregate(total=Sum("valor"))[
-            "total"
-        ] or 0
+        pago = (
+            filtrar_empresa(Despesa.objects.filter(status="pago"), request)
+            .filter(filtro_data_financeira_despesa(mes_ref, mes_fim))
+            .aggregate(total=Sum("valor"))["total"]
+            or 0
+        )
         escala = max(recebido, pago, 1)
         meses.append(
             {
@@ -432,6 +809,7 @@ def dashboard(request):
             "meses": meses,
             "inicio_mes": inicio_mes,
             "fim_mes": fim_mes,
+            "filtro_receita": filtro_receita,
             "ultimos_lancamentos": ultimos_lancamentos,
         },
     )
@@ -439,7 +817,7 @@ def dashboard(request):
 
 def clientes(request):
     busca = request.GET.get("q", "").strip()
-    queryset = Cliente.objects.annotate(
+    queryset = filtrar_empresa(Cliente.objects, request).annotate(
         total_vendas=Count("vendas", filter=Q(vendas__evento__isnull=False))
     )
     if busca:
@@ -450,7 +828,7 @@ def clientes(request):
 
 
 def cliente_form(request, pk=None):
-    cliente = get_object_or_404(Cliente, pk=pk) if pk else None
+    cliente = get_object_or_404(filtrar_empresa(Cliente.objects, request), pk=pk) if pk else None
     initial = {}
     if not cliente:
         initial = {
@@ -462,14 +840,16 @@ def cliente_form(request, pk=None):
         }
     form = ClienteForm(request.POST or None, instance=cliente, initial=initial)
     if request.method == "POST" and form.is_valid():
-        form.save()
+        cliente = form.save(commit=False)
+        atribuir_empresa(cliente, request)
+        cliente.save()
         messages.success(request, "Cliente salvo com sucesso.")
         return redirect("clientes")
     return render(request, "crm/form.html", {"form": form, "titulo": "Cliente", "voltar": "clientes"})
 
 
 def cliente_excluir(request, pk):
-    cliente = get_object_or_404(Cliente, pk=pk)
+    cliente = get_object_or_404(filtrar_empresa(Cliente.objects, request), pk=pk)
     if request.method == "POST":
         cliente.delete()
         messages.success(request, "Cliente excluido.")
@@ -480,7 +860,7 @@ def cliente_excluir(request, pk):
 def financeiro(request):
     hoje = timezone.localdate()
     vendas = (
-        Venda.objects.select_related("cliente", "evento")
+        filtrar_empresa(Venda.objects.select_related("cliente", "evento"), request)
         .prefetch_related("parcelas")
         .filter(evento__isnull=False)
         .exclude(status="cancelado")
@@ -546,7 +926,7 @@ def financeiro(request):
 def financeiro_cliente_painel(request, cliente_id):
     status = request.GET.get("status", "")
     hoje = timezone.localdate()
-    cliente = get_object_or_404(Cliente, pk=cliente_id)
+    cliente = get_object_or_404(filtrar_empresa(Cliente.objects, request), pk=cliente_id)
     vendas = cliente.vendas.select_related("cliente", "evento").prefetch_related("parcelas")
     if status == "vencido":
         vendas = vendas.filter(parcelas__status__in=["pendente", "parcial", "atrasado"], parcelas__vencimento__lt=hoje).distinct()
@@ -561,10 +941,18 @@ def financeiro_cliente_painel(request, cliente_id):
 
 
 def venda_form(request, pk=None):
-    venda = get_object_or_404(Venda, pk=pk) if pk else None
+    venda = get_object_or_404(filtrar_empresa(Venda.objects, request), pk=pk) if pk else None
     form = VendaForm(request.POST or None, instance=venda)
+    empresa = empresa_atual(request)
+    if empresa:
+        form.fields["cliente"].queryset = Cliente.objects.filter(empresa=empresa)
     if request.method == "POST" and form.is_valid():
-        venda = form.save()
+        venda = form.save(commit=False)
+        atribuir_empresa(venda, request)
+        if venda.cliente_id and not venda.empresa_id:
+            venda.empresa = venda.cliente.empresa
+        venda.save()
+        form.save_m2m()
         primeira_parcela = form.cleaned_data.get("primeira_parcela") or venda.data_venda
         gerar_parcelas(venda, primeira_parcela)
         messages.success(request, "Venda e parcelas salvas com sucesso.")
@@ -573,7 +961,7 @@ def venda_form(request, pk=None):
 
 
 def venda_excluir(request, pk):
-    venda = get_object_or_404(Venda, pk=pk)
+    venda = get_object_or_404(filtrar_empresa(Venda.objects, request), pk=pk)
     if request.method == "POST":
         venda.delete()
         messages.success(request, "Venda excluida.")
@@ -582,8 +970,8 @@ def venda_excluir(request, pk):
 
 
 def parcela_form(request, pk=None, venda_id=None):
-    parcela = get_object_or_404(Parcela, pk=pk) if pk else None
-    venda = get_object_or_404(Venda, pk=venda_id) if venda_id else parcela.venda
+    parcela = get_object_or_404(filtrar_parcelas_empresa(Parcela.objects, request), pk=pk) if pk else None
+    venda = get_object_or_404(filtrar_empresa(Venda.objects, request), pk=venda_id) if venda_id else parcela.venda
     form = ParcelaForm(request.POST or None, instance=parcela)
     if request.method == "POST" and form.is_valid():
         parcela = form.save(commit=False)
@@ -596,7 +984,7 @@ def parcela_form(request, pk=None, venda_id=None):
 
 
 def parcela_excluir(request, pk):
-    parcela = get_object_or_404(Parcela, pk=pk)
+    parcela = get_object_or_404(filtrar_parcelas_empresa(Parcela.objects, request), pk=pk)
     if request.method == "POST":
         parcela.delete()
         messages.success(request, "Parcela excluida.")
@@ -607,7 +995,7 @@ def parcela_excluir(request, pk):
 def alertas(request):
     hoje = timezone.localdate()
     agora = timezone.localtime()
-    parcelas = Parcela.objects.select_related("venda", "venda__cliente").exclude(status="pago").filter(
+    parcelas = filtrar_parcelas_empresa(Parcela.objects.select_related("venda", "venda__cliente"), request).exclude(status="pago").filter(
         Q(vencimento__lt=hoje) | Q(lembrete_em__lte=hoje)
     )
     for parcela in parcelas:
@@ -617,7 +1005,7 @@ def alertas(request):
             "vencido" if parcela.status_financeiro == "vencido" else "lembrete",
         )
     compromissos_hoje = list(
-        Tarefa.objects.select_related("cliente", "evento", "evento__cliente").filter(data=hoje).order_by("hora", "titulo")
+        filtrar_empresa(Tarefa.objects.select_related("cliente", "evento", "evento__cliente"), request).filter(data=hoje).order_by("hora", "titulo")
     )
     for tarefa in compromissos_hoje:
         tarefa.alerta_estado = "sem-hora"
@@ -638,13 +1026,13 @@ def alertas(request):
             else:
                 tarefa.alerta_estado = "passado"
                 tarefa.alerta_mensagem = "Horario ja passou. Confirme se o compromisso foi realizado."
-    clientes_recompra = [cliente for cliente in Cliente.objects.all() if cliente.precisa_alerta_recompra]
-    clientes_evento_hoje = Cliente.objects.filter(data_evento=hoje)
-    clientes_edicao = Cliente.objects.filter(data_evento=hoje - timedelta(days=1))
+    clientes_recompra = [cliente for cliente in filtrar_empresa(Cliente.objects.all(), request) if cliente.precisa_alerta_recompra]
+    clientes_evento_hoje = filtrar_empresa(Cliente.objects.filter(data_evento=hoje), request)
+    clientes_edicao = filtrar_empresa(Cliente.objects.filter(data_evento=hoje - timedelta(days=1)), request)
     clientes_copia_cartao = Cliente.objects.none()
     if hoje.weekday() == 0:
-        clientes_copia_cartao = Cliente.objects.filter(data_evento__range=(hoje - timedelta(days=7), hoje - timedelta(days=1)))
-    lembretes_anuais = LembreteAnual.objects.select_related("cliente", "evento").filter(
+        clientes_copia_cartao = filtrar_empresa(Cliente.objects.filter(data_evento__range=(hoje - timedelta(days=7), hoje - timedelta(days=1))), request)
+    lembretes_anuais = filtrar_empresa(LembreteAnual.objects.select_related("cliente", "evento"), request).filter(
         data_alerta__lte=hoje,
         data_proximo_evento__gte=hoje,
     )
@@ -666,7 +1054,7 @@ def alertas(request):
 
 
 def tarefa_marcar_concluida(request, pk):
-    tarefa = get_object_or_404(Tarefa, pk=pk)
+    tarefa = get_object_or_404(filtrar_empresa(Tarefa.objects, request), pk=pk)
     if request.method == "POST":
         tarefa.status = "concluida"
         tarefa.save(update_fields=["status"])
@@ -676,19 +1064,19 @@ def tarefa_marcar_concluida(request, pk):
 
 def despesas(request):
     status = request.GET.get("status", "")
-    despesas_qs = Despesa.objects.all().order_by("data", "descricao")
+    despesas_qs = filtrar_empresa(Despesa.objects.all(), request).order_by("vencimento", "data", "descricao")
     if status:
         despesas_qs = despesas_qs.filter(status=status)
 
     grupos_por_mes = {}
     for despesa in despesas_qs:
-        chave = despesa.data.replace(day=1)
+        chave = data_financeira_despesa(despesa).replace(day=1)
         grupos_por_mes.setdefault(
             chave,
             {
                 "chave": chave,
                 "titulo": f"{MESES_PT[chave.month - 1]} {chave.year}",
-                "descricao": "Despesas cadastradas para este mes.",
+                "descricao": "Despesas por vencimento ou pagamento.",
                 "despesas": [],
                 "total_valor": Decimal("0.00"),
                 "pagas": 0,
@@ -719,7 +1107,10 @@ def despesas_relatorio_pdf(request, ano, mes):
     status = request.GET.get("status", "")
     inicio = date(ano, mes, 1)
     fim = inicio.replace(day=monthrange(ano, mes)[1])
-    despesas_qs = Despesa.objects.filter(data__range=(inicio, fim)).order_by("data", "descricao")
+    despesas_qs = (
+        filtrar_empresa(Despesa.objects.filter(filtro_data_financeira_despesa(inicio, fim)), request)
+        .order_by("vencimento", "data", "descricao")
+    )
     if status:
         despesas_qs = despesas_qs.filter(status=status)
     despesas_lista = list(despesas_qs)
@@ -736,17 +1127,19 @@ def despesas_relatorio_pdf(request, ano, mes):
 
 
 def despesa_form(request, pk=None):
-    despesa = get_object_or_404(Despesa, pk=pk) if pk else None
+    despesa = get_object_or_404(filtrar_empresa(Despesa.objects, request), pk=pk) if pk else None
     form = DespesaForm(request.POST or None, instance=despesa)
     if request.method == "POST" and form.is_valid():
-        form.save()
+        despesa = form.save(commit=False)
+        atribuir_empresa(despesa, request)
+        despesa.save()
         messages.success(request, "Despesa salva com sucesso.")
         return redirect("despesas")
     return render(request, "crm/form.html", {"form": form, "titulo": "Despesa", "voltar": "despesas"})
 
 
 def despesa_excluir(request, pk):
-    despesa = get_object_or_404(Despesa, pk=pk)
+    despesa = get_object_or_404(filtrar_empresa(Despesa.objects, request), pk=pk)
     if request.method == "POST":
         despesa.delete()
         messages.success(request, "Despesa excluida.")
@@ -759,7 +1152,7 @@ def pipeline(request):
     hoje = timezone.localdate()
     inicio_relatorio = hoje - timedelta(days=30)
     etapas_visiveis = {"novo", "orcamento", "negociacao"}
-    oportunidades = Oportunidade.objects.select_related("cliente")
+    oportunidades = filtrar_empresa(Oportunidade.objects.select_related("cliente"), request)
     if busca:
         oportunidades = oportunidades.filter(Q(nome_lead__icontains=busca) | Q(cliente__nome__icontains=busca))
 
@@ -805,10 +1198,16 @@ def pipeline(request):
 
 
 def oportunidade_form(request, pk=None):
-    oportunidade = get_object_or_404(Oportunidade, pk=pk) if pk else None
+    oportunidade = get_object_or_404(filtrar_empresa(Oportunidade.objects, request), pk=pk) if pk else None
     form = OportunidadeForm(request.POST or None, instance=oportunidade)
+    empresa = empresa_atual(request)
+    if empresa:
+        form.fields["cliente"].queryset = Cliente.objects.filter(empresa=empresa)
     if request.method == "POST" and form.is_valid():
-        oportunidade = form.save()
+        oportunidade = form.save(commit=False)
+        atribuir_empresa(oportunidade, request)
+        oportunidade.save()
+        form.save_m2m()
         messages.success(request, "Oportunidade salva com sucesso.")
         if oportunidade.etapa == "fechado":
             evento = preparar_evento_da_oportunidade(oportunidade)
@@ -822,7 +1221,7 @@ def oportunidade_form(request, pk=None):
 
 
 def oportunidade_reuniao(request, pk):
-    oportunidade = get_object_or_404(Oportunidade, pk=pk)
+    oportunidade = get_object_or_404(filtrar_empresa(Oportunidade.objects, request), pk=pk)
     if request.method != "POST":
         return redirect("pipeline")
 
@@ -830,6 +1229,7 @@ def oportunidade_reuniao(request, pk):
     if form.is_valid():
         local = form.cleaned_data["local"].strip()
         Tarefa.objects.create(
+            empresa=oportunidade.empresa,
             titulo=f"Reuniao - {oportunidade.nome_lead}",
             tipo="reuniao",
             data=form.cleaned_data["dia"],
@@ -853,6 +1253,7 @@ def oportunidade_reuniao(request, pk):
 def preparar_evento_da_oportunidade(oportunidade):
     evento = (
         Evento.objects.filter(
+            empresa=oportunidade.empresa,
             nome__iexact=oportunidade.nome_lead,
             data_festa=oportunidade.data_festa,
             tipo_evento=oportunidade.tipo_evento,
@@ -861,7 +1262,7 @@ def preparar_evento_da_oportunidade(oportunidade):
         .first()
     )
     if not evento:
-        evento = Evento(nome=oportunidade.nome_lead)
+        evento = Evento(nome=oportunidade.nome_lead, empresa=oportunidade.empresa)
     evento.nome = oportunidade.nome_lead
     evento.tipo_evento = oportunidade.tipo_evento
     evento.data_festa = oportunidade.data_festa
@@ -881,6 +1282,7 @@ def registrar_oportunidade_perdida(oportunidade):
     registro, _ = OportunidadePerdida.objects.update_or_create(
         oportunidade=oportunidade,
         defaults={
+            "empresa": oportunidade.empresa,
             "nome": oportunidade.nome_lead,
             "tipo_prospeccao": oportunidade.origem or oportunidade.titulo,
             "nome_indicacao": oportunidade.nome_indicacao,
@@ -895,7 +1297,7 @@ def registrar_oportunidade_perdida(oportunidade):
 
 
 def oportunidade_mover(request, pk, etapa):
-    oportunidade = get_object_or_404(Oportunidade, pk=pk)
+    oportunidade = get_object_or_404(filtrar_empresa(Oportunidade.objects, request), pk=pk)
     if etapa in dict(Oportunidade.ETAPA_CHOICES):
         oportunidade.etapa = etapa
         if etapa == "fechado":
@@ -914,7 +1316,7 @@ def oportunidade_mover(request, pk, etapa):
 
 
 def oportunidade_excluir(request, pk):
-    oportunidade = get_object_or_404(Oportunidade, pk=pk)
+    oportunidade = get_object_or_404(filtrar_empresa(Oportunidade.objects, request), pk=pk)
     if request.method == "POST":
         oportunidade.delete()
         messages.success(request, "Oportunidade excluida.")
@@ -936,7 +1338,7 @@ def agenda(request):
     fim_mes = inicio_mes.replace(day=monthrange(inicio_mes.year, inicio_mes.month)[1])
     horas_grade = list(range(7, 24))
     tarefas = (
-        Tarefa.objects.select_related("cliente", "evento", "evento__cliente", "evento__venda")
+        filtrar_empresa(Tarefa.objects.select_related("cliente", "evento", "evento__cliente", "evento__venda"), request)
         .prefetch_related("evento__venda__parcelas")
         .filter(data__range=(inicio_semana, fim_semana))
         .order_by("data", "hora", "titulo")
@@ -949,7 +1351,7 @@ def agenda(request):
         "pagamento": "pagamento",
         "lembrete": "lembrete",
     }
-    tarefas_mes_lista = Tarefa.objects.filter(data__range=(inicio_mes, fim_mes)).order_by("data", "tipo")
+    tarefas_mes_lista = filtrar_empresa(Tarefa.objects.filter(data__range=(inicio_mes, fim_mes)), request).order_by("data", "tipo")
     tons_por_dia_mes = {}
     for tarefa in tarefas_mes_lista:
         tom = tons_tipo.get(tarefa.tipo, "tarefa")
@@ -1036,7 +1438,7 @@ def agenda(request):
 
 def cobrancas(request):
     hoje = timezone.localdate()
-    parcelas = Parcela.objects.select_related("venda", "venda__cliente").filter(
+    parcelas = filtrar_parcelas_empresa(Parcela.objects.select_related("venda", "venda__cliente"), request).filter(
         venda__evento__isnull=False
     )
     grupos_base = [
@@ -1108,7 +1510,7 @@ def cobrancas(request):
 
 
 def parcela_marcar_pago(request, pk):
-    parcela = get_object_or_404(Parcela.objects.select_related("venda", "venda__evento"), pk=pk)
+    parcela = get_object_or_404(filtrar_parcelas_empresa(Parcela.objects.select_related("venda", "venda__evento"), request), pk=pk)
     if request.method == "POST":
         hoje = timezone.localdate()
         valor_baixa = decimal_brasileiro(request.POST.get("valor_recebido"))
@@ -1254,7 +1656,7 @@ def aplicar_parcelas_evento(evento, parcelas):
 
 def eventos(request):
     busca = request.GET.get("q", "").strip()
-    eventos_qs = Evento.objects.select_related("cliente", "venda").prefetch_related("venda__parcelas", "documentos")
+    eventos_qs = filtrar_empresa(Evento.objects.select_related("cliente", "venda"), request).prefetch_related("venda__parcelas", "documentos")
     if busca:
         eventos_qs = eventos_qs.filter(Q(nome__icontains=busca) | Q(cliente__nome__icontains=busca) | Q(contato__icontains=busca))
     eventos_qs = eventos_qs.order_by("data_festa", "horario", "nome")
@@ -1286,21 +1688,28 @@ def relatorios(request):
     hoje = timezone.localdate()
     inicio_mes = hoje.replace(day=1)
     fim_mes = hoje.replace(day=monthrange(hoje.year, hoje.month)[1])
-    vendas_mes = Venda.objects.filter(evento__isnull=False).exclude(status="cancelado").filter(
+    vendas_mes = filtrar_empresa(Venda.objects.filter(evento__isnull=False), request).exclude(status="cancelado").filter(
         data_venda__range=(inicio_mes, fim_mes)
     )
-    parcelas_recebidas_mes = Parcela.objects.filter(
+    parcelas_recebidas_mes = filtrar_parcelas_empresa(Parcela.objects.filter(
         venda__evento__isnull=False,
         data_pagamento__range=(inicio_mes, fim_mes),
-    )
-    despesas_mes = Despesa.objects.filter(Q(data__range=(inicio_mes, fim_mes)) | Q(vencimento__range=(inicio_mes, fim_mes)))
-    eventos_mes = Evento.objects.filter(
+    ), request)
+    adiantamentos_recebidos_mes = filtrar_empresa(Evento.objects.filter(
+        venda__isnull=False,
+        adiantamento__gt=0,
+        adiantamento_pago=True,
+        venda__data_venda__range=(inicio_mes, fim_mes),
+    ), request).exclude(venda__status="cancelado")
+    despesas_mes = filtrar_empresa(Despesa.objects.filter(filtro_data_financeira_despesa(inicio_mes, fim_mes)), request)
+    eventos_mes = filtrar_empresa(Evento.objects.filter(
         Q(criado_em__date__range=(inicio_mes, fim_mes)) | Q(atualizado_em__date__range=(inicio_mes, fim_mes))
-    ).distinct()
+    ), request).distinct()
     contexto = {
         "inicio_mes": inicio_mes,
         "fim_mes": fim_mes,
-        "receita_mes": parcelas_recebidas_mes.aggregate(total=Sum("valor_recebido"))["total"] or 0,
+        "receita_mes": (parcelas_recebidas_mes.aggregate(total=Sum("valor_recebido"))["total"] or 0)
+        + (adiantamentos_recebidos_mes.aggregate(total=Sum("adiantamento"))["total"] or 0),
         "despesa_mes": despesas_mes.aggregate(total=Sum("valor"))["total"] or 0,
         "eventos_mes": eventos_mes.count(),
         "vendas_recentes": vendas_mes.select_related("cliente")[:8],
@@ -1309,9 +1718,141 @@ def relatorios(request):
     return render(request, "crm/relatorios.html", contexto)
 
 
+def relatorios_pdf(request, tipo, ano, mes):
+    tipos = {
+        "receita": "Receita do Mes",
+        "despesas": "Despesas do Mes",
+        "eventos": "Eventos no Mes",
+        "vendas": "Vendas recentes",
+        "eventos-recentes": "Eventos recentes",
+    }
+    if tipo not in tipos or mes < 1 or mes > 12:
+        return redirect("relatorios")
+
+    inicio = date(ano, mes, 1)
+    fim = inicio.replace(day=monthrange(ano, mes)[1])
+    periodo = f"Periodo: {inicio:%d/%m/%Y} ate {fim:%d/%m/%Y}"
+    titulo = f"{tipos[tipo]} - {MESES_PT[mes - 1]} {ano}"
+
+    if tipo == "receita":
+        parcelas = filtrar_parcelas_empresa(Parcela.objects.filter(
+            venda__evento__isnull=False,
+            data_pagamento__range=(inicio, fim),
+        ).select_related("venda", "venda__cliente"), request)
+        adiantamentos = (
+            filtrar_empresa(Evento.objects.filter(
+                venda__isnull=False,
+                adiantamento__gt=0,
+                adiantamento_pago=True,
+                venda__data_venda__range=(inicio, fim),
+            ), request)
+            .exclude(venda__status="cancelado")
+            .select_related("cliente", "venda")
+        )
+        total_parcelas = parcelas.aggregate(total=Sum("valor_recebido"))["total"] or Decimal("0.00")
+        total_adiantamentos = adiantamentos.aggregate(total=Sum("adiantamento"))["total"] or Decimal("0.00")
+        total = total_parcelas + total_adiantamentos
+        linhas = [
+            [
+                parcela.venda.cliente.nome,
+                parcela.venda.titulo,
+                f"Parcela {parcela.numero}",
+                parcela.data_pagamento.strftime("%d/%m/%Y") if parcela.data_pagamento else "",
+                f"R$ {total_brl(parcela.valor_recebido)}",
+            ]
+            for parcela in parcelas
+        ]
+        linhas += [
+            [
+                evento.cliente.nome if evento.cliente else evento.nome,
+                evento.venda.titulo if evento.venda else evento.nome,
+                "Adiantamento",
+                evento.venda.data_venda.strftime("%d/%m/%Y") if evento.venda else "",
+                f"R$ {total_brl(evento.adiantamento)}",
+            ]
+            for evento in adiantamentos
+        ]
+        cabecalho = ["Cliente", "Venda", "Parcela", "Pagamento", "Valor"]
+        resumo = f"Total recebido: R$ {total_brl(total)}"
+    elif tipo == "despesas":
+        despesas = filtrar_empresa(Despesa.objects.filter(filtro_data_financeira_despesa(inicio, fim)), request).order_by(
+            "vencimento", "data", "descricao"
+        )
+        total = despesas.aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
+        linhas = [
+            [
+                despesa.descricao,
+                despesa.categoria or "Sem categoria",
+                data_financeira_despesa(despesa).strftime("%d/%m/%Y"),
+                despesa.get_status_display(),
+                f"R$ {total_brl(despesa.valor)}",
+            ]
+            for despesa in despesas
+        ]
+        cabecalho = ["Descricao", "Categoria", "Data financeira", "Status", "Valor"]
+        resumo = f"Total de despesas: R$ {total_brl(total)}"
+    elif tipo == "eventos":
+        eventos = filtrar_empresa(Evento.objects.filter(data_festa__range=(inicio, fim)), request).select_related("cliente", "venda")
+        linhas = [
+            [
+                evento.nome,
+                evento.get_tipo_evento_display() if evento.tipo_evento else "Evento",
+                evento.data_festa.strftime("%d/%m/%Y") if evento.data_festa else "",
+                evento.cliente.nome if evento.cliente else "",
+                f"R$ {total_brl(evento.valor_cobrado)}",
+            ]
+            for evento in eventos
+        ]
+        cabecalho = ["Evento", "Tipo", "Data", "Cliente", "Valor"]
+        resumo = f"Total de eventos: {eventos.count()}"
+    elif tipo == "vendas":
+        vendas = (
+            filtrar_empresa(Venda.objects.filter(evento__isnull=False), request)
+            .exclude(status="cancelado")
+            .filter(data_venda__range=(inicio, fim))
+            .select_related("cliente")
+        )
+        total = vendas.aggregate(total=Sum("valor_total"))["total"] or Decimal("0.00")
+        linhas = [
+            [
+                venda.cliente.nome,
+                venda.titulo,
+                venda.data_venda.strftime("%d/%m/%Y"),
+                venda.get_status_display(),
+                f"R$ {total_brl(venda.valor_total)}",
+            ]
+            for venda in vendas
+        ]
+        cabecalho = ["Cliente", "Venda", "Data", "Status", "Valor"]
+        resumo = f"Total vendido: R$ {total_brl(total)}"
+    else:
+        eventos = filtrar_empresa(Evento.objects.filter(
+            Q(criado_em__date__range=(inicio, fim)) | Q(atualizado_em__date__range=(inicio, fim))
+        ), request).distinct().select_related("cliente", "venda")
+        linhas = [
+            [
+                evento.nome,
+                evento.get_tipo_evento_display() if evento.tipo_evento else "Evento",
+                evento.data_festa.strftime("%d/%m/%Y") if evento.data_festa else "",
+                evento.cliente.nome if evento.cliente else "",
+                f"R$ {total_brl(evento.valor_cobrado)}",
+            ]
+            for evento in eventos
+        ]
+        cabecalho = ["Evento", "Tipo", "Data festa", "Cliente", "Valor"]
+        resumo = f"Total de eventos recentes: {eventos.count()}"
+
+    response = HttpResponse(
+        gerar_pdf_relatorio_simples(titulo, periodo, resumo, cabecalho, linhas),
+        content_type="application/pdf",
+    )
+    response["Content-Disposition"] = f'inline; filename="relatorio_{tipo}_{ano}_{mes:02d}.pdf"'
+    return response
+
+
 def evento_form(request, pk=None):
-    evento = get_object_or_404(Evento, pk=pk) if pk else None
-    form = EventoForm(request.POST or None, instance=evento)
+    evento = get_object_or_404(filtrar_empresa(Evento.objects, request), pk=pk) if pk else None
+    form = EventoForm(request.POST or None, instance=evento, empresa=empresa_atual(request))
     parcelas_form = parcelas_para_formulario(evento, request)
     parcelas_post = []
     if request.method == "POST" and form.is_valid():
@@ -1328,7 +1869,7 @@ def evento_form(request, pk=None):
         if request.GET.get("proximo") == "cliente" and evento.cliente_id:
             oportunidade_id = request.GET.get("oportunidade")
             if oportunidade_id:
-                Oportunidade.objects.filter(pk=oportunidade_id).update(cliente=evento.cliente, atualizado_em=timezone.now())
+                filtrar_empresa(Oportunidade.objects.filter(pk=oportunidade_id), request).update(cliente=evento.cliente, atualizado_em=timezone.now())
             messages.success(request, "Cliente criado ou atualizado a partir do evento.")
             return redirect("cliente_editar", pk=evento.cliente_id)
         return redirect("eventos")
@@ -1351,7 +1892,7 @@ def evento_form(request, pk=None):
 
 
 def evento_excluir(request, pk):
-    evento = get_object_or_404(Evento, pk=pk)
+    evento = get_object_or_404(filtrar_empresa(Evento.objects, request), pk=pk)
     if request.method == "POST":
         evento.delete()
         messages.success(request, "Evento excluido.")
@@ -1360,17 +1901,23 @@ def evento_excluir(request, pk):
 
 
 def tarefa_form(request, pk=None):
-    tarefa = get_object_or_404(Tarefa, pk=pk) if pk else None
+    tarefa = get_object_or_404(filtrar_empresa(Tarefa.objects, request), pk=pk) if pk else None
     form = TarefaForm(request.POST or None, instance=tarefa)
+    empresa = empresa_atual(request)
+    if empresa:
+        form.fields["cliente"].queryset = Cliente.objects.filter(empresa=empresa)
+        form.fields["evento"].queryset = Evento.objects.filter(empresa=empresa)
     if request.method == "POST" and form.is_valid():
-        form.save()
+        tarefa = form.save(commit=False)
+        atribuir_empresa(tarefa, request)
+        tarefa.save()
         messages.success(request, "Tarefa salva com sucesso.")
         return redirect("agenda")
     return render(request, "crm/form.html", {"form": form, "titulo": "Tarefa ou trabalho", "voltar": "agenda"})
 
 
 def tarefa_excluir(request, pk):
-    tarefa = get_object_or_404(Tarefa, pk=pk)
+    tarefa = get_object_or_404(filtrar_empresa(Tarefa.objects, request), pk=pk)
     if request.method == "POST":
         tarefa.delete()
         messages.success(request, "Tarefa excluida.")
@@ -1379,12 +1926,12 @@ def tarefa_excluir(request, pk):
 
 
 def documentos(request):
-    docs = Documento.objects.select_related("cliente", "evento")
+    docs = filtrar_empresa(Documento.objects.select_related("cliente", "evento"), request)
     return render(request, "crm/documentos.html", {"documentos": docs})
 
 
 def clientes_exportar_planilha(request):
-    conteudo = montar_xlsx_clientes(Cliente.objects.all())
+    conteudo = montar_xlsx_clientes(filtrar_empresa(Cliente.objects.all(), request))
     response = HttpResponse(
         conteudo,
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1441,15 +1988,16 @@ def clientes_importar_planilha(request):
             cliente = None
             email = dados.get("email", "").strip()
             if email:
-                cliente = Cliente.objects.filter(email__iexact=email).first()
+                cliente = filtrar_empresa(Cliente.objects.filter(email__iexact=email), request).first()
             if not cliente:
-                cliente = Cliente.objects.filter(nome__iexact=nome).first()
+                cliente = filtrar_empresa(Cliente.objects.filter(nome__iexact=nome), request).first()
 
             data_evento = ler_data_planilha(dados.get("data_evento", ""))
             proxima_oportunidade = calcular_proxima_oportunidade(data_evento)
 
             valores = {
                 "nome": nome,
+                "empresa": empresa_atual(request),
                 "telefone": dados.get("telefone", ""),
                 "email": email,
                 "origem": dados.get("origem", ""),
@@ -1475,12 +2023,12 @@ def clientes_importar_planilha(request):
 
 
 def documento_form(request, pk=None):
-    documento = get_object_or_404(Documento, pk=pk) if pk else None
+    documento = get_object_or_404(filtrar_empresa(Documento.objects, request), pk=pk) if pk else None
     initial = {}
     if not documento:
         evento_id = request.GET.get("evento")
         if evento_id:
-            evento = get_object_or_404(Evento.objects.select_related("cliente"), pk=evento_id)
+            evento = get_object_or_404(filtrar_empresa(Evento.objects.select_related("cliente"), request), pk=evento_id)
             initial = {
                 "evento": evento,
                 "cliente": evento.cliente,
@@ -1490,8 +2038,17 @@ def documento_form(request, pk=None):
                 "data_limite": evento.data_festa,
             }
     form = DocumentoForm(request.POST or None, request.FILES or None, instance=documento, initial=initial)
+    empresa = empresa_atual(request)
+    if empresa:
+        form.fields["cliente"].queryset = Cliente.objects.filter(empresa=empresa)
+        form.fields["evento"].queryset = Evento.objects.filter(empresa=empresa)
     if request.method == "POST" and form.is_valid():
         documento = form.save(commit=False)
+        atribuir_empresa(documento, request)
+        if documento.evento_id and not documento.empresa_id:
+            documento.empresa = documento.evento.empresa
+        if documento.cliente_id and not documento.empresa_id:
+            documento.empresa = documento.cliente.empresa
         if documento.evento and documento.evento.cliente_id:
             documento.cliente = documento.evento.cliente
         if documento.cliente:
@@ -1512,7 +2069,7 @@ def documento_form(request, pk=None):
 
 
 def documento_excluir(request, pk):
-    documento = get_object_or_404(Documento, pk=pk)
+    documento = get_object_or_404(filtrar_empresa(Documento.objects, request), pk=pk)
     if request.method == "POST":
         documento.delete()
         messages.success(request, "Documento excluido.")
@@ -1521,7 +2078,7 @@ def documento_excluir(request, pk):
 
 
 def documento_enviar(request, pk):
-    documento = get_object_or_404(Documento, pk=pk)
+    documento = get_object_or_404(filtrar_empresa(Documento.objects, request), pk=pk)
     if request.method != "POST":
         return redirect("documentos")
 
@@ -1569,7 +2126,7 @@ def documento_enviar(request, pk):
 
 
 def documento_whatsapp_manual(request, pk):
-    documento = get_object_or_404(Documento, pk=pk)
+    documento = get_object_or_404(filtrar_empresa(Documento.objects, request), pk=pk)
     if documento.status == "rascunho":
         messages.warning(request, "Revise e salve o contrato antes de abrir o lembrete pelo WhatsApp.")
         return redirect("documento_editar", pk=documento.pk)
@@ -1588,7 +2145,7 @@ def documento_whatsapp_manual(request, pk):
 
 
 def documento_pdf(request, pk):
-    documento = get_object_or_404(Documento, pk=pk)
+    documento = get_object_or_404(filtrar_empresa(Documento.objects, request), pk=pk)
     response = HttpResponse(gerar_pdf_documento(documento), content_type="application/pdf")
     disposition = request.GET.get("download")
     modo = "attachment" if disposition == "1" else "inline"

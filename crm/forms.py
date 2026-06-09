@@ -5,7 +5,20 @@ import unicodedata
 from django import forms
 from django.utils import timezone
 
-from .models import Cliente, Despesa, Documento, Evento, LembreteAnual, Oportunidade, Parcela, Tarefa, Venda
+from .models import (
+    AdminCompromisso,
+    Cliente,
+    ContratoAdminEmpresa,
+    Despesa,
+    Documento,
+    Empresa,
+    Evento,
+    LembreteAnual,
+    Oportunidade,
+    Parcela,
+    Tarefa,
+    Venda,
+)
 
 
 class DateInput(forms.DateInput):
@@ -31,6 +44,36 @@ class CurrencyField(forms.DecimalField):
                 partes = value.split(".")
                 value = "".join(partes[:-1]) + "." + partes[-1]
         return super().to_python(value)
+
+
+class EmpresaAdminForm(forms.ModelForm):
+    class Meta:
+        model = Empresa
+        fields = ["nome", "documento", "email", "telefone", "ativa"]
+
+
+class ContratoAdminEmpresaForm(forms.ModelForm):
+    valor = CurrencyField(max_digits=10, decimal_places=2, widget=forms.TextInput(attrs={"inputmode": "decimal"}))
+
+    class Meta:
+        model = ContratoAdminEmpresa
+        fields = ["empresa", "descricao", "valor", "vencimento", "status", "data_pagamento", "observacoes"]
+        widgets = {
+            "vencimento": DateInput(),
+            "data_pagamento": DateInput(),
+            "observacoes": forms.Textarea(attrs={"rows": 3}),
+        }
+
+
+class AdminCompromissoForm(forms.ModelForm):
+    class Meta:
+        model = AdminCompromisso
+        fields = ["titulo", "empresa", "tipo", "data", "hora", "status", "descricao"]
+        widgets = {
+            "data": DateInput(),
+            "hora": forms.TimeInput(attrs={"type": "time"}),
+            "descricao": forms.Textarea(attrs={"rows": 3}),
+        }
 
 
 def add_months(data, meses):
@@ -110,6 +153,7 @@ class ClienteForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        self.empresa = kwargs.pop("empresa", None)
         super().__init__(*args, **kwargs)
         self.fields["proxima_oportunidade"].widget.attrs["readonly"] = "readonly"
 
@@ -275,6 +319,7 @@ class OportunidadeForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        self.empresa = kwargs.pop("empresa", None)
         super().__init__(*args, **kwargs)
         instance = self.instance
         if instance and instance.pk:
@@ -373,6 +418,7 @@ class EventoForm(forms.ModelForm):
             "quantidade_parcelas",
             "primeira_parcela",
             "adiantamento",
+            "adiantamento_pago",
             "autoriza_uso_imagem",
             "observacoes",
         ]
@@ -394,6 +440,7 @@ class EventoForm(forms.ModelForm):
             "pagamento_recebido": "Pagamento ja recebido?",
             "quantidade_parcelas": "Quantidade de parcelas",
             "primeira_parcela": "Data do primeiro pagamento",
+            "adiantamento_pago": "Pagamento adianto",
             "autoriza_uso_imagem": "Autoriza uso de imagem?",
             "observacoes": "Observacoes internas",
         }
@@ -410,6 +457,7 @@ class EventoForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        self.empresa = kwargs.pop("empresa", None)
         super().__init__(*args, **kwargs)
         instance = self.instance
         if instance and instance.pk:
@@ -425,6 +473,8 @@ class EventoForm(forms.ModelForm):
             self.fields["adiantamento"].initial = ""
         self.tipo_evento_opcoes = opcoes_tipo_evento()
         clientes = Cliente.objects.order_by("nome")
+        if self.empresa:
+            clientes = clientes.filter(empresa=self.empresa)
         vistos = set()
         self.clientes_opcoes = []
         for cliente in clientes:
@@ -442,6 +492,7 @@ class EventoForm(forms.ModelForm):
         )
         self.fields["nome"].help_text = "Digite parte do nome para filtrar clientes cadastrados ou informe um nome novo."
         self.fields["pagamento_recebido"].help_text = "Marque quando o valor ja entrou no caixa."
+        self.fields["adiantamento_pago"].help_text = "Marque quando o adiantamento ja entrou no caixa."
         self.fields["quantidade_parcelas"].widget.attrs.update({"min": 1, "max": 60})
 
     def clean_tipo_evento(self):
@@ -462,6 +513,8 @@ class EventoForm(forms.ModelForm):
         cleaned_data["adiantamento"] = adiantamento
         if adiantamento > valor_cobrado:
             self.add_error("adiantamento", "O adiantamento nao pode ser maior que o valor cobrado.")
+        if not adiantamento:
+            cleaned_data["adiantamento_pago"] = False
         return cleaned_data
 
     def save(self, commit=True):
@@ -470,9 +523,16 @@ class EventoForm(forms.ModelForm):
         evento.nome = nome
         if not evento.adiantamento:
             evento.adiantamento = Decimal("0.00")
-        cliente = Cliente.objects.filter(nome__iexact=nome).first()
+        if self.empresa:
+            evento.empresa = self.empresa
+        cliente_qs = Cliente.objects.filter(nome__iexact=nome)
+        if self.empresa:
+            cliente_qs = cliente_qs.filter(empresa=self.empresa)
+        cliente = cliente_qs.first()
         if not cliente:
-            cliente = Cliente(nome=nome)
+            cliente = Cliente(nome=nome, empresa=self.empresa)
+        elif self.empresa and not cliente.empresa_id:
+            cliente.empresa = self.empresa
         cliente.telefone = evento.contato or cliente.telefone
         cliente.email = self.cleaned_data.get("email") or cliente.email
         cliente.tipo_evento = evento.tipo_evento or cliente.tipo_evento
@@ -499,6 +559,7 @@ class EventoForm(forms.ModelForm):
         documento, _ = Documento.objects.get_or_create(
             evento=evento,
             defaults={
+                "empresa": evento.empresa,
                 "cliente": evento.cliente,
                 "titulo": f"Contrato - {evento.nome}",
                 "status": "rascunho",
@@ -516,6 +577,7 @@ class EventoForm(forms.ModelForm):
             return None
 
         venda = evento.venda or Venda()
+        venda.empresa = evento.empresa
         venda.cliente = evento.cliente
         venda.titulo = evento.tipo_evento or f"Evento - {evento.nome}"
         venda.valor_total = evento.valor_cobrado
@@ -570,6 +632,7 @@ class EventoForm(forms.ModelForm):
         lembrete, _ = LembreteAnual.objects.update_or_create(
             evento=evento,
             defaults={
+                "empresa": evento.empresa,
                 "cliente": evento.cliente,
                 "nome": evento.nome,
                 "contato": evento.contato,

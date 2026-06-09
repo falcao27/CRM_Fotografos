@@ -2,11 +2,12 @@ from io import BytesIO
 from decimal import Decimal
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import Cliente, Despesa, Documento, Evento, Oportunidade, Parcela, Tarefa, Venda
+from .models import Cliente, Despesa, Documento, Empresa, Evento, Oportunidade, Parcela, PerfilUsuario, Tarefa, Venda
 from .views import ler_linhas_xlsx
 
 
@@ -264,6 +265,22 @@ class DespesasTests(TestCase):
         self.assertContains(response, "Junho 2026")
         self.assertContains(response, "Relatorio PDF")
 
+    def test_despesa_paga_entra_no_mes_do_vencimento(self):
+        Despesa.objects.create(
+            descricao="VideoMake",
+            categoria="Video",
+            valor="150.00",
+            data="2026-07-15",
+            vencimento="2026-06-10",
+            status="pago",
+        )
+
+        response = self.client.get(reverse("despesas"))
+
+        grupos = response.context["grupos_despesas"]
+        self.assertEqual(grupos[0]["titulo"], "Junho 2026")
+        self.assertEqual(grupos[0]["total_valor"], Decimal("150.00"))
+
     def test_relatorio_pdf_despesas_mes(self):
         Despesa.objects.create(descricao="Aluguel", categoria="Fixo", valor="500.00", data="2026-05-05")
 
@@ -272,6 +289,53 @@ class DespesasTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "application/pdf")
         self.assertIn(b"Aluguel", response.content)
+
+    def test_relatorio_pdf_usa_mes_do_vencimento(self):
+        Despesa.objects.create(
+            descricao="VideoMake",
+            categoria="Video",
+            valor="150.00",
+            data="2026-07-15",
+            vencimento="2026-06-10",
+            status="pago",
+        )
+
+        response = self.client.get(reverse("despesas_relatorio_pdf", args=[2026, 6]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"VideoMake", response.content)
+
+    def test_relatorio_pdf_card_despesas(self):
+        Despesa.objects.create(
+            descricao="VideoMake",
+            categoria="Video",
+            valor="150.00",
+            data="2026-07-15",
+            vencimento="2026-06-10",
+            status="pago",
+        )
+
+        response = self.client.get(reverse("relatorios_pdf", args=["despesas", 2026, 6]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn(b"VideoMake", response.content)
+
+
+class MultiEmpresaIsolationTests(TestCase):
+    def test_cliente_nao_enxerga_dados_de_outra_empresa(self):
+        empresa_a = Empresa.objects.create(nome="Empresa A")
+        empresa_b = Empresa.objects.create(nome="Empresa B")
+        Cliente.objects.create(nome="Cliente Empresa A", empresa=empresa_a)
+        Cliente.objects.create(nome="Cliente Empresa B", empresa=empresa_b)
+        user = User.objects.create_user(username="empresa_b", password="senha")
+        PerfilUsuario.objects.create(user=user, empresa=empresa_b, papel="empresa_admin")
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("clientes"))
+
+        self.assertContains(response, "Cliente Empresa B")
+        self.assertNotContains(response, "Cliente Empresa A")
 
 
 class FinanceiroReceitasTests(TestCase):
@@ -403,6 +467,7 @@ class FinanceiroReceitasTests(TestCase):
             forma_pagamento="pix",
             quantidade_parcelas=1,
             adiantamento="200.00",
+            adiantamento_pago=True,
         )
         Parcela.objects.create(
             venda=venda,
@@ -420,3 +485,34 @@ class FinanceiroReceitasTests(TestCase):
         self.assertEqual(totais["saldo_atual"], Decimal("200.00"))
         self.assertEqual(totais["saldo_previsto"], Decimal("600.00"))
         self.assertEqual(response.context["formas_pagamento"][0]["total"], Decimal("200.00"))
+
+    def test_relatorio_receita_inclui_adiantamento_pago(self):
+        hoje = timezone.localdate()
+        cliente = Cliente.objects.create(nome="Cliente Relatorio")
+        venda = Venda.objects.create(
+            cliente=cliente,
+            titulo="Aniversario",
+            data_venda=hoje,
+            valor_total="600.00",
+            status="pendente",
+            forma_pagamento="pix",
+            condicao_pagamento="parcelado",
+            quantidade_parcelas=1,
+        )
+        Evento.objects.create(
+            cliente=cliente,
+            venda=venda,
+            nome="Cliente Relatorio",
+            tipo_evento="aniversario",
+            valor_cobrado="600.00",
+            forma_pagamento="pix",
+            quantidade_parcelas=1,
+            adiantamento="200.00",
+            adiantamento_pago=True,
+        )
+
+        response = self.client.get(reverse("relatorios_pdf", args=["receita", hoje.year, hoje.month]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Adiantamento", response.content)
+        self.assertIn(b"200,00", response.content)

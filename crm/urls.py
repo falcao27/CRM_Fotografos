@@ -4,6 +4,20 @@ from . import views
 
 
 urlpatterns = [
+    path("login/", views.login_view, name="login"),
+    path("logout/", views.logout_view, name="logout"),
+    path("cadastro/", views.cadastro_usuario, name="cadastro"),
+    path("admin-master/", views.admin_master, name="admin_master"),
+    path("admin-master/financeiro/", views.admin_financeiro, name="admin_financeiro"),
+    path("admin-master/financeiro/empresa/nova/", views.admin_empresa_form, name="admin_empresa_nova"),
+    path("admin-master/financeiro/contrato/novo/", views.admin_contrato_form, name="admin_contrato_novo"),
+    path("admin-master/relatorios/", views.admin_relatorios, name="admin_relatorios"),
+    path("admin-master/agenda/", views.admin_agenda, name="admin_agenda"),
+    path("admin-master/agenda/novo/", views.admin_compromisso_form, name="admin_compromisso_novo"),
+    path("admin-master/clientes/", views.admin_clientes, name="admin_clientes"),
+    path("admin-master/clientes/<int:empresa_id>/acessar/", views.admin_acessar_cliente, name="admin_acessar_cliente"),
+    path("admin-master/cobrancas/", views.admin_cobrancas, name="admin_cobrancas"),
+    path("admin-master/banco/", views.admin_banco, name="admin_banco"),
     path("", views.dashboard, name="dashboard"),
     path("clientes/", views.clientes, name="clientes"),
     path("clientes/novo/", views.cliente_form, name="cliente_novo"),
@@ -35,6 +49,7 @@ urlpatterns = [
     path("eventos/<int:pk>/editar/", views.evento_form, name="evento_editar"),
     path("eventos/<int:pk>/excluir/", views.evento_excluir, name="evento_excluir"),
     path("relatorios/", views.relatorios, name="relatorios"),
+    path("relatorios/<str:tipo>/<int:ano>/<int:mes>/relatorio.pdf", views.relatorios_pdf, name="relatorios_pdf"),
     path("agenda/", views.agenda, name="agenda"),
     path("cobrancas/", views.cobrancas, name="cobrancas"),
     path("cobrancas/parcelas/<int:pk>/pagar/", views.parcela_marcar_pago, name="parcela_marcar_pago"),

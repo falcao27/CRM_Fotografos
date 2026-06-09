@@ -6,15 +6,26 @@
 
 {% block content %}
 <section class="month-line">
-  <i data-lucide="calendar"></i>
-  <strong>{{ inicio_mes|date:"F" }}</strong>
-  <span>({{ inicio_mes|date:"d/m" }} - {{ fim_mes|date:"d/m" }})</span>
+  <div>
+    <i data-lucide="calendar"></i>
+    <strong>{{ inicio_mes|date:"F" }}</strong>
+    <span>({{ inicio_mes|date:"d/m" }} - {{ fim_mes|date:"d/m" }})</span>
+  </div>
 </section>
 
 <section class="finance-summary">
-  <article class="money-card income">
-    <div><span>Receitas</span><small>Recebidos</small><strong>{{ totais.receitas_recebidas|brl }}</strong></div>
-    <div><i data-lucide="dollar-sign"></i><small>A receber</small><b>{{ totais.receitas_a_receber|brl }}</b></div>
+  <article class="money-card income revenue-card">
+    <div class="money-card-head">
+      <span>Receitas</span>
+      <div class="revenue-filter" aria-label="Filtro de receitas">
+        <a class="{% if filtro_receita == 'mes' %}active{% endif %}" href="?receita=mes">Mes</a>
+        <a class="{% if filtro_receita == 'todos' %}active{% endif %}" href="?receita=todos">Atual</a>
+      </div>
+    </div>
+    <div class="money-card-values">
+      <div><small>Recebidos</small><strong>{{ totais.receitas_recebidas|brl }}</strong></div>
+      <div><i data-lucide="dollar-sign"></i><small>A receber</small><b>{{ totais.receitas_a_receber|brl }}</b></div>
+    </div>
   </article>
   <article class="money-card expense">
     <div><span>Despesas</span><small>Pagos</small><strong>{{ totais.despesas_pagas|brl }}</strong></div>

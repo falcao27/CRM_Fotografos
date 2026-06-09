@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% load crm_format %}
+
+{% block page_title %}Relatorios Admin{% endblock %}
+{% block page_subtitle %}Indicadores administrativos do CRM.{% endblock %}
+
+{% block content %}
+<section class="month-line report-period">
+  <i data-lucide="calendar"></i>
+  <strong>Periodo</strong>
+  <span>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</span>
+</section>
+
+<section class="report-card-grid">
+  <article class="panel report-card">
+    <span>Receita do Mes</span>
+    <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
+    <strong>{{ receita_mes|brl }}</strong>
+  </article>
+  <article class="panel report-card">
+    <span>Vendas recentes</span>
+    <small>Contratos administrativos do periodo</small>
+    <strong>{{ vendas_recentes|length }}</strong>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Vendas recentes</h2></div>
+  <div class="list">
+    {% for contrato in vendas_recentes %}
+      <div class="list-row">
+        <div>
+          <strong>{{ contrato.empresa.nome }}</strong>
+          <span>{{ contrato.descricao }} - {{ contrato.get_status_display }}</span>
+        </div>
+        <b>{{ contrato.valor|brl }}</b>
+      </div>
+    {% empty %}
+      <p class="empty">Nenhuma venda administrativa neste periodo.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

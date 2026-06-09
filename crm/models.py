@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 from string import Template
 
+from django.contrib.auth.models import User
 from django.db import models
 from django.utils import timezone
 
@@ -69,7 +70,121 @@ JOAO BOSCO LISBOA DE MORAIS: ___________________________________
 """
 
 
+class Empresa(models.Model):
+    nome = models.CharField(max_length=160)
+    documento = models.CharField(max_length=30, blank=True)
+    email = models.EmailField(blank=True)
+    telefone = models.CharField(max_length=30, blank=True)
+    ativa = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["nome"]
+
+    def __str__(self):
+        return self.nome
+
+
+class PerfilUsuario(models.Model):
+    ROLE_CHOICES = [
+        ("admin_master", "Admin master"),
+        ("empresa_admin", "Admin da empresa"),
+        ("empresa_usuario", "Usuario da empresa"),
+    ]
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="perfil_crm")
+    empresa = models.ForeignKey(Empresa, on_delete=models.SET_NULL, null=True, blank=True, related_name="usuarios")
+    papel = models.CharField(max_length=20, choices=ROLE_CHOICES, default="empresa_usuario")
+    ultimo_acesso = models.DateTimeField(null=True, blank=True)
+    online_ate = models.DateTimeField(null=True, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["user__username"]
+
+    @property
+    def online(self):
+        return bool(self.online_ate and self.online_ate >= timezone.now())
+
+    @property
+    def admin_master(self):
+        return self.papel == "admin_master" or self.user.is_superuser
+
+    def __str__(self):
+        return f"{self.user.username} - {self.get_papel_display()}"
+
+
+class AcessoUsuario(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="acessos_crm")
+    empresa = models.ForeignKey(Empresa, on_delete=models.SET_NULL, null=True, blank=True, related_name="acessos")
+    caminho = models.CharField(max_length=220)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-criado_em"]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.caminho}"
+
+
+class ContratoAdminEmpresa(models.Model):
+    STATUS_CHOICES = [
+        ("pendente", "Pendente"),
+        ("pago", "Pago"),
+        ("atrasado", "Atrasado"),
+        ("cancelado", "Cancelado"),
+    ]
+
+    empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, related_name="contratos_admin")
+    descricao = models.CharField(max_length=160, default="Mensalidade CRM")
+    valor = models.DecimalField(max_digits=10, decimal_places=2)
+    vencimento = models.DateField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pendente")
+    data_pagamento = models.DateField(null=True, blank=True)
+    observacoes = models.TextField(blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["vencimento", "empresa__nome"]
+
+    def __str__(self):
+        return f"{self.empresa} - {self.descricao}"
+
+
+class AdminCompromisso(models.Model):
+    TIPO_CHOICES = [
+        ("reuniao", "Reuniao"),
+        ("cobranca", "Cobranca"),
+        ("suporte", "Suporte"),
+        ("tarefa", "Tarefa"),
+    ]
+    STATUS_CHOICES = [
+        ("pendente", "Pendente"),
+        ("concluida", "Concluida"),
+        ("atrasada", "Atrasada"),
+    ]
+
+    titulo = models.CharField(max_length=160)
+    empresa = models.ForeignKey(Empresa, on_delete=models.SET_NULL, null=True, blank=True, related_name="compromissos_admin")
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default="tarefa")
+    data = models.DateField()
+    hora = models.TimeField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pendente")
+    descricao = models.TextField(blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["data", "hora", "titulo"]
+
+    def __str__(self):
+        return self.titulo
+
+
 class Cliente(models.Model):
+    empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, null=True, blank=True, related_name="clientes")
     nome = models.CharField(max_length=160)
     telefone = models.CharField(max_length=30, blank=True)
     email = models.EmailField(blank=True)
@@ -120,6 +235,7 @@ class Venda(models.Model):
         ("parcelado", "Parcelado"),
     ]
 
+    empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, null=True, blank=True, related_name="vendas")
     cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name="vendas")
     titulo = models.CharField(max_length=160)
     data_venda = models.DateField(default=timezone.localdate)
@@ -215,6 +331,7 @@ class Despesa(models.Model):
     ]
     FORMA_CHOICES = Venda.FORMA_CHOICES
 
+    empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, null=True, blank=True, related_name="despesas")
     descricao = models.CharField(max_length=160)
     categoria = models.CharField(max_length=90, blank=True)
     valor = models.DecimalField(max_digits=10, decimal_places=2)
@@ -246,6 +363,7 @@ class Oportunidade(models.Model):
         ("alta", "Alta"),
     ]
 
+    empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, null=True, blank=True, related_name="oportunidades")
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, related_name="oportunidades")
     nome_lead = models.CharField(max_length=160)
     titulo = models.CharField(max_length=160)
@@ -278,6 +396,7 @@ class Oportunidade(models.Model):
 
 
 class OportunidadePerdida(models.Model):
+    empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, null=True, blank=True, related_name="oportunidades_perdidas")
     oportunidade = models.OneToOneField(
         Oportunidade,
         on_delete=models.SET_NULL,
@@ -331,6 +450,7 @@ class Evento(models.Model):
         ("outro", "Outro"),
     ]
 
+    empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, null=True, blank=True, related_name="eventos")
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, related_name="eventos")
     venda = models.OneToOneField(Venda, on_delete=models.SET_NULL, null=True, blank=True, related_name="evento")
     nome = models.CharField(max_length=160)
@@ -352,6 +472,7 @@ class Evento(models.Model):
     quantidade_parcelas = models.PositiveIntegerField(default=1)
     primeira_parcela = models.DateField(null=True, blank=True)
     adiantamento = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    adiantamento_pago = models.BooleanField(default=False)
     autoriza_uso_imagem = models.BooleanField(default=True)
     observacoes = models.TextField(blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
@@ -384,6 +505,7 @@ class Evento(models.Model):
 
 
 class LembreteAnual(models.Model):
+    empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, null=True, blank=True, related_name="lembretes_anuais")
     evento = models.OneToOneField(Evento, on_delete=models.CASCADE, related_name="lembrete_anual")
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, related_name="lembretes_anuais")
     nome = models.CharField(max_length=160)
@@ -422,6 +544,7 @@ class Tarefa(models.Model):
         ("atrasada", "Atrasada"),
     ]
 
+    empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, null=True, blank=True, related_name="tarefas")
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, related_name="tarefas")
     evento = models.OneToOneField(
         "Evento",
@@ -459,6 +582,7 @@ class Documento(models.Model):
         ("ambos", "WhatsApp e e-mail"),
     ]
 
+    empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, null=True, blank=True, related_name="documentos")
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, related_name="documentos")
     evento = models.ForeignKey(Evento, on_delete=models.SET_NULL, null=True, blank=True, related_name="documentos")
     titulo = models.CharField(max_length=160)

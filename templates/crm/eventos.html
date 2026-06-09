@@ -40,6 +40,7 @@
               <th>Local</th>
               <th>Buffet</th>
               <th>Valor</th>
+              <th>Adiantamento</th>
               <th>Forma de Pagamento</th>
               <th>Pagamento</th>
               <th>Contato</th>
@@ -59,6 +60,13 @@
                 <td>{{ evento.local_evento|default:"-" }}</td>
                 <td>{% if evento.em_buffet %}Sim{% else %}Nao{% endif %}</td>
                 <td>{{ evento.valor_cobrado|brl }}</td>
+                <td>
+                  {% if evento.adiantamento_pago and evento.adiantamento %}
+                    <span class="badge pago">Sim</span><br><small>{{ evento.adiantamento|brl }}</small>
+                  {% else %}
+                    <span class="badge pendente">Nao</span>
+                  {% endif %}
+                </td>
                 <td>{{ evento.get_forma_pagamento_display }}{% if evento.quantidade_parcelas > 1 %}<br><small>{{ evento.quantidade_parcelas }}x</small>{% endif %}</td>
                 <td><span class="badge {{ evento.pagamento_status }}">{{ evento.pagamento_status_label }}</span></td>
                 <td>{{ evento.contato|default:"-" }}</td>

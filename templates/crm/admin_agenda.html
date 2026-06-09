@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block page_title %}Agenda Admin{% endblock %}
+{% block page_subtitle %}Compromissos administrativos do CRM.{% endblock %}
+
+{% block content %}
+<section class="calendar-app">
+  <aside class="calendar-sidebar panel">
+    <div class="calendar-create">
+      <a class="button" href="{% url 'admin_compromisso_novo' %}"><i data-lucide="plus"></i>Criar</a>
+    </div>
+
+    <div class="mini-calendar-head">
+      <strong>{{ mes_titulo }}</strong>
+      <div class="mini-calendar-nav">
+        <a class="icon-link" href="?data={{ semana_anterior }}" title="Semana anterior"><i data-lucide="chevron-left"></i></a>
+        <a class="icon-link" href="?data={{ semana_proxima }}" title="Proxima semana"><i data-lucide="chevron-right"></i></a>
+      </div>
+    </div>
+
+    <div class="mini-calendar">
+      <div class="mini-weekdays">
+        <span>D</span><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span>
+      </div>
+      {% for semana in mini_calendario %}
+        <div class="mini-week">
+          {% for dia in semana %}
+            <a class="mini-day{% if not dia.no_mes %} muted{% endif %}{% if dia.hoje %} today{% endif %}{% if dia.selecionado %} selected{% endif %}" href="?data={{ dia.iso }}">
+              <span>{{ dia.numero }}</span>
+              {% if dia.tons %}
+                <span class="mini-day-markers" aria-hidden="true">
+                  {% for tom in dia.tons %}<i class="mini-day-marker tone-{{ tom }}"></i>{% endfor %}
+                </span>
+              {% endif %}
+            </a>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="agenda-sidebar-section">
+      <div class="agenda-sidebar-title"><strong>Semana</strong></div>
+      <small>{{ semana_titulo }}</small>
+      <a class="button ghost agenda-today" href="?data={{ hoje_iso }}"><i data-lucide="calendar-check"></i>Hoje</a>
+    </div>
+  </aside>
+
+  <section class="week-calendar panel">
+    <header class="week-calendar-toolbar">
+      <div>
+        <span>Agenda semanal</span>
+        <strong>{{ semana_titulo }}</strong>
+      </div>
+      <div class="week-calendar-actions">
+        <a class="button ghost" href="?data={{ semana_anterior }}"><i data-lucide="chevron-left"></i>Anterior</a>
+        <a class="button ghost" href="?data={{ hoje_iso }}">Hoje</a>
+        <a class="button ghost" href="?data={{ semana_proxima }}">Proxima<i data-lucide="chevron-right"></i></a>
+      </div>
+    </header>
+
+    <div class="week-calendar-shell">
+      <div class="week-days-header">
+        <div class="timezone-label">GMT-03</div>
+        {% for dia in dias_semana %}
+          <a class="week-day-heading{% if dia.hoje %} today{% endif %}" href="?data={{ dia.iso }}">
+            <span>{{ dia.semana }}</span>
+            <strong>{{ dia.numero }}</strong>
+          </a>
+        {% endfor %}
+      </div>
+
+      <div class="all-day-row">
+        <div class="all-day-label">Dia todo</div>
+        {% for dia in dias_semana %}
+          <div class="all-day-cell">
+            {% for item in dia.itens_sem_hora %}
+              <span class="agenda-chip tone-{{ item.tom }}">{{ item.compromisso.titulo }}</span>
+            {% endfor %}
+          </div>
+        {% endfor %}
+      </div>
+
+      <div class="time-grid">
+        <div class="time-labels">
+          {% for hora in horas_grade %}<span>{{ hora|stringformat:"02d" }}:00</span>{% endfor %}
+        </div>
+        <div class="week-columns">
+          {% for dia in dias_semana %}
+            <div class="week-column{% if dia.hoje %} today{% endif %}">
+              {% for hora in horas_grade %}<span class="hour-line"></span>{% endfor %}
+              {% for item in dia.itens_horario %}
+                <div class="agenda-event tone-{{ item.tom }}" style="{{ item.style }}">
+                  <strong>{{ item.compromisso.titulo }}</strong>
+                  <small>{% if item.compromisso.hora %}{{ item.compromisso.hora|time:"H:i" }}{% endif %}{% if item.compromisso.empresa %} - {{ item.compromisso.empresa.nome }}{% endif %}</small>
+                </div>
+              {% endfor %}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </section>
+</section>
+{% endblock %}

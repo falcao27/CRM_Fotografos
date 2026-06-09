@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block page_title %}Admin Master{% endblock %}
+{% block page_subtitle %}Ranking de uso das empresas no CRM.{% endblock %}
+
+{% block content %}
+<section class="admin-master-actions">
+  <button class="button ghost" type="button" data-open-access-modal>
+    <i data-lucide="history"></i>Ultimos acessos
+  </button>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Ranking de uso</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Posicao</th>
+          <th>Cliente/empresa</th>
+          <th>Acessos</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for empresa in ranking_empresas %}
+          <tr>
+            <td>{{ forloop.counter }}</td>
+            <td><strong>{{ empresa.nome }}</strong><br><small>{{ empresa.email|default:"Email nao informado" }}</small></td>
+            <td>{{ empresa.total_acessos }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="3">Nenhuma empresa cadastrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="modal-backdrop" id="accessModal" {% if not acesso_modal_aberto %}hidden{% endif %}>
+  <article class="modal-panel access-modal" role="dialog" aria-modal="true" aria-labelledby="accessModalTitle">
+    <button class="modal-close" type="button" data-close-access-modal aria-label="Fechar">
+      <i data-lucide="x"></i>
+    </button>
+    <h3 id="accessModalTitle">Ultimos acessos</h3>
+    <form class="access-filter" method="get">
+      <input type="hidden" name="acessos" value="1">
+      <label for="diasAcesso">Filtrar por dias</label>
+      <div>
+        <input id="diasAcesso" name="dias" type="number" min="1" max="365" value="{{ dias_acesso }}">
+        <button class="button" type="submit"><i data-lucide="filter"></i>Filtrar</button>
+      </div>
+    </form>
+
+    <div class="list access-list">
+      {% for acesso in acessos %}
+        <div class="list-row">
+          <div>
+            <strong>{{ acesso.user.username }}</strong>
+            <span>{{ acesso.empresa.nome|default:"Admin master" }} - {{ acesso.caminho }}</span>
+          </div>
+          <b>{{ acesso.criado_em|date:"d/m H:i" }}</b>
+        </div>
+      {% empty %}
+        <p class="empty">Nenhum acesso encontrado para o periodo.</p>
+      {% endfor %}
+    </div>
+  </article>
+</div>
+
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    const modal = document.getElementById("accessModal");
+    const openButton = document.querySelector("[data-open-access-modal]");
+    const closeButton = document.querySelector("[data-close-access-modal]");
+
+    openButton.addEventListener("click", function () {
+      modal.hidden = false;
+      if (window.lucide) window.lucide.createIcons();
+    });
+
+    closeButton.addEventListener("click", function () {
+      modal.hidden = true;
+    });
+
+    modal.addEventListener("click", function (event) {
+      if (event.target === modal) modal.hidden = true;
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") modal.hidden = true;
+    });
+  });
+</script>
+{% endblock %}

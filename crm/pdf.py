@@ -522,3 +522,88 @@ def gerar_pdf_relatorio_despesas(titulo, despesas, total):
     )
     partes.append("\n".join(xref).encode("latin-1", errors="replace"))
     return b"".join(partes)
+
+
+def gerar_pdf_relatorio_simples(titulo, periodo, resumo, cabecalho, linhas):
+    canvas = PdfCanvas()
+    canvas.add_page()
+    y = 790
+    canvas.text(45, y, titulo, size=15, font="F2")
+    y -= 22
+    canvas.text(45, y, periodo, size=9)
+    y -= 18
+    canvas.text(45, y, resumo, size=10, font="F2")
+    y -= 28
+
+    largura_total = 505
+    largura_coluna = largura_total / max(len(cabecalho), 1)
+
+    for indice, label in enumerate(cabecalho):
+        canvas.text(45 + (indice * largura_coluna), y, label, size=7, font="F2")
+    y -= 10
+    canvas.line(45, y, 550, y)
+    y -= 14
+
+    for linha in linhas:
+        if y < 62:
+            canvas.add_page()
+            y = 790
+            canvas.text(45, y, titulo, size=13, font="F2")
+            y -= 26
+            for indice, label in enumerate(cabecalho):
+                canvas.text(45 + (indice * largura_coluna), y, label, size=7, font="F2")
+            y -= 10
+            canvas.line(45, y, 550, y)
+            y -= 14
+
+        for indice, valor in enumerate(linha):
+            texto = str(valor or "")
+            limite = max(int(largura_coluna / 4.5), 10)
+            if len(texto) > limite:
+                texto = texto[: limite - 3] + "..."
+            canvas.text(45 + (indice * largura_coluna), y, texto, size=7)
+        y -= 15
+
+    if not linhas:
+        canvas.text(45, y, "Nenhum registro encontrado para o periodo.", size=9)
+
+    canvas.finish()
+
+    objetos = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique >>",
+    ]
+    page_refs = []
+    for page_commands in canvas.pages:
+        page_obj = len(objetos) + 1
+        content_obj = page_obj + 1
+        page_refs.append(f"{page_obj} 0 R")
+        stream = "\n".join(page_commands).encode("latin-1", errors="replace")
+        objetos.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PAGE_WIDTH} {PAGE_HEIGHT}] "
+            f"/Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents {content_obj} 0 R >>"
+        )
+        objetos.append(f"<< /Length {len(stream)} >>\nstream\n{stream.decode('latin-1')}\nendstream")
+    objetos[1] = f"<< /Type /Pages /Kids [{' '.join(page_refs)}] /Count {len(page_refs)} >>"
+
+    partes = [b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n"]
+    offsets = [0]
+    for indice, objeto in enumerate(objetos, start=1):
+        offsets.append(sum(len(parte) for parte in partes))
+        partes.append(f"{indice} 0 obj\n{objeto}\nendobj\n".encode("latin-1", errors="replace"))
+    xref_inicio = sum(len(parte) for parte in partes)
+    xref = ["xref", f"0 {len(objetos) + 1}", "0000000000 65535 f "]
+    for offset in offsets[1:]:
+        xref.append(f"{offset:010d} 00000 n ")
+    xref.append(
+        "trailer\n"
+        f"<< /Size {len(objetos) + 1} /Root 1 0 R >>\n"
+        "startxref\n"
+        f"{xref_inicio}\n"
+        "%%EOF\n"
+    )
+    partes.append("\n".join(xref).encode("latin-1", errors="replace"))
+    return b"".join(partes)

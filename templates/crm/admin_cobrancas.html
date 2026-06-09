@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% load crm_format %}
+
+{% block page_title %}Cobrancas Admin{% endblock %}
+{% block page_subtitle %}Cobrancas dos contratos do admin com as empresas do CRM.{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <div class="panel-head"><h2>Pendencias administrativas</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Empresa</th><th>Descricao</th><th>Vencimento</th><th>Status</th><th>Valor</th></tr></thead>
+      <tbody>
+        {% for contrato in contratos %}
+          <tr>
+            <td>{{ contrato.empresa.nome }}</td>
+            <td>{{ contrato.descricao }}</td>
+            <td>{{ contrato.vencimento|date:"d/m/Y" }}</td>
+            <td><span class="badge {{ contrato.status }}">{{ contrato.get_status_display }}</span></td>
+            <td>{{ contrato.valor|brl }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5">Nenhuma cobranca administrativa pendente.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

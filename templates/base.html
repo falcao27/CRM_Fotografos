@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CRM João Bosco Fotografos</title>
+  <title>{{ crm_brand_titulo }}</title>
   <link rel="icon" type="image/svg+xml" href="{% static 'crm/brand/favicon.svg' %}?v=20260601-jb-camera">
   <link rel="stylesheet" href="{% static 'crm/styles.css' %}?v=20260531-agenda-mini-2">
   <script src="https://unpkg.com/lucide@latest" defer></script>
@@ -12,25 +12,39 @@
 <body>
   <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <span class="brand-mark">JB</span>
-      <div>
-        <strong>CRM João Bosco Fotografia</strong>
-        <small>Vendas e relacionamento</small>
+      <span class="brand-mark">{{ crm_brand_iniciais }}</span>
+      <div class="brand-text">
+        <strong>{{ crm_brand_titulo }}</strong>
+        <small>{{ crm_brand_subtitulo }}</small>
       </div>
     </div>
     <nav>
-      <a href="{% url 'dashboard' %}"><i data-lucide="layout-dashboard"></i>Painel</a>
-      <a href="{% url 'financeiro' %}"><i data-lucide="wallet-cards"></i>Financeiro</a>
-      <a href="{% url 'despesas' %}"><i data-lucide="receipt-text"></i>Despesas</a>
-      <a href="{% url 'pipeline' %}"><i data-lucide="kanban-square"></i>Pipeline</a>
-      <a href="{% url 'eventos' %}"><i data-lucide="party-popper"></i>Eventos</a>
-      <a href="{% url 'relatorios' %}"><i data-lucide="chart-column"></i>Relatorios</a>
-      <a href="{% url 'agenda' %}"><i data-lucide="calendar-days"></i>Agenda</a>
-      <a href="{% url 'cobrancas' %}"><i data-lucide="badge-dollar-sign"></i>Cobrancas</a>
-      <a href="{% url 'clientes' %}"><i data-lucide="contact-round"></i>Clientes</a>
-      <a href="{% url 'documentos' %}"><i data-lucide="file-check-2"></i>Documentos</a>
-      <a class="alert-nav-link" href="{% url 'alertas' %}"><i data-lucide="bell-ring"></i>Alertas</a>
-      <a href="/admin/"><i data-lucide="database"></i>Banco/Admin</a>
+      {% if request.user.is_superuser or request.user.perfil_crm.admin_master %}
+        <a href="{% url 'admin_master' %}"><i data-lucide="layout-dashboard"></i>Painel</a>
+        <a href="{% url 'admin_financeiro' %}"><i data-lucide="wallet-cards"></i>Financeiro</a>
+        <a href="{% url 'admin_relatorios' %}"><i data-lucide="chart-column"></i>Relatorios</a>
+        <a href="{% url 'admin_agenda' %}"><i data-lucide="calendar-days"></i>Agenda</a>
+        <a href="{% url 'admin_clientes' %}"><i data-lucide="contact-round"></i>Clientes</a>
+        <a href="{% url 'admin_cobrancas' %}"><i data-lucide="badge-dollar-sign"></i>Cobrancas</a>
+      {% else %}
+        <a href="{% url 'dashboard' %}"><i data-lucide="layout-dashboard"></i>Painel</a>
+        <a href="{% url 'financeiro' %}"><i data-lucide="wallet-cards"></i>Financeiro</a>
+        <a href="{% url 'despesas' %}"><i data-lucide="receipt-text"></i>Despesas</a>
+        <a href="{% url 'pipeline' %}"><i data-lucide="kanban-square"></i>Pipeline</a>
+        <a href="{% url 'eventos' %}"><i data-lucide="party-popper"></i>Eventos</a>
+        <a href="{% url 'relatorios' %}"><i data-lucide="chart-column"></i>Relatorios</a>
+        <a href="{% url 'agenda' %}"><i data-lucide="calendar-days"></i>Agenda</a>
+        <a href="{% url 'cobrancas' %}"><i data-lucide="badge-dollar-sign"></i>Cobrancas</a>
+        <a href="{% url 'clientes' %}"><i data-lucide="contact-round"></i>Clientes</a>
+        <a href="{% url 'documentos' %}"><i data-lucide="file-check-2"></i>Documentos</a>
+        <a class="alert-nav-link" href="{% url 'alertas' %}"><i data-lucide="bell-ring"></i>Alertas</a>
+      {% endif %}
+      {% if request.user.is_superuser or request.user.perfil_crm.admin_master %}
+        <a href="{% url 'admin_banco' %}"><i data-lucide="database"></i>Banco/Admin</a>
+      {% else %}
+        <a href="/admin/"><i data-lucide="database"></i>Banco/Admin</a>
+      {% endif %}
+      <a href="{% url 'logout' %}"><i data-lucide="log-out"></i>Sair</a>
     </nav>
   </aside>
 

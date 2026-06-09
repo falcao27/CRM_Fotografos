@@ -1,0 +1,87 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login - CRM Cloud</title>
+  <link rel="stylesheet" href="{% static 'crm/styles.css' %}?v=auth-20260609-2">
+  <script src="https://unpkg.com/lucide@latest" defer></script>
+</head>
+<body class="auth-page">
+  <main class="auth-shell">
+    <section class="auth-panel">
+      <div class="auth-logo">
+        <span class="brand-mark">C</span>
+        <div>
+          <strong>CRM Cloud</strong>
+          <small>Acesso seguro</small>
+        </div>
+      </div>
+
+      <div class="auth-tabs" role="tablist" aria-label="Tipo de acesso">
+        <button class="auth-tab {% if tipo_login != 'admin' %}active{% endif %}" type="button" data-auth-tab="cliente">
+          <i data-lucide="building-2"></i>Cliente
+        </button>
+        <button class="auth-tab {% if tipo_login == 'admin' %}active{% endif %}" type="button" data-auth-tab="admin">
+          <i data-lucide="shield-check"></i>Admin
+        </button>
+      </div>
+
+      <h1 data-auth-title>{% if tipo_login == "admin" %}Login do admin{% else %}Login do cliente{% endif %}</h1>
+      <p data-auth-copy>{% if tipo_login == "admin" %}Acesse o painel master do sistema.{% else %}Acesse o painel da sua empresa.{% endif %}</p>
+
+      {% if messages %}
+        <div class="messages">
+          {% for message in messages %}
+            <div class="message">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <form method="post" class="auth-form">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+        <input type="hidden" name="tipo_login" value="{{ tipo_login|default:'cliente' }}" data-auth-kind>
+        <label for="id_username">Usuario</label>
+        <input id="id_username" name="username" autocomplete="username" required>
+        <label for="id_password">Senha</label>
+        <input id="id_password" name="password" type="password" autocomplete="current-password" required>
+        <button class="button" type="submit"><i data-lucide="log-in"></i>Entrar</button>
+      </form>
+
+      <a class="button ghost auth-register-link" href="{% url 'cadastro' %}" data-client-register {% if tipo_login == "admin" %}hidden{% endif %}>
+        <i data-lucide="user-plus"></i>Cadastrar cliente
+      </a>
+    </section>
+  </main>
+  <script>
+    window.addEventListener("DOMContentLoaded", function () {
+      if (window.lucide) window.lucide.createIcons();
+      var kind = document.querySelector("[data-auth-kind]");
+      var title = document.querySelector("[data-auth-title]");
+      var copy = document.querySelector("[data-auth-copy]");
+      var registerLink = document.querySelector("[data-client-register]");
+
+      function syncRegisterLink(value) {
+        registerLink.hidden = value === "admin";
+        registerLink.style.display = value === "admin" ? "none" : "";
+      }
+
+      document.querySelectorAll("[data-auth-tab]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var value = button.dataset.authTab;
+          kind.value = value;
+          document.querySelectorAll("[data-auth-tab]").forEach(function (tab) {
+            tab.classList.toggle("active", tab === button);
+          });
+          title.textContent = value === "admin" ? "Login do admin" : "Login do cliente";
+          copy.textContent = value === "admin" ? "Acesse o painel master do sistema." : "Acesse o painel da sua empresa.";
+          syncRegisterLink(value);
+        });
+      });
+      syncRegisterLink(kind.value);
+    });
+  </script>
+</body>
+</html>
