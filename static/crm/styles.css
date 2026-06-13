@@ -610,7 +610,8 @@ h2 {
   gap: 10px;
 }
 
-.report-card span {
+.report-card span,
+.report-card .card-title {
   font-size: 22px;
   font-weight: 800;
 }
@@ -633,6 +634,34 @@ h2 {
   color: var(--accent-dark);
   font-size: 48px;
   line-height: 1;
+}
+
+.report-card-form {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.report-card-form label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.report-card-form input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
 }
 
 .report-detail-button {

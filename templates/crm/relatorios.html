@@ -13,70 +13,61 @@
 
 <section class="report-card-grid">
   <article class="panel report-card">
-    <div class="report-card-head">
-      <span>Receita do Mes</span>
-      <button class="icon-link report-download" type="button" data-report-download="receita" title="Baixar relatorio"><i data-lucide="download"></i></button>
-    </div>
+    <span class="card-title">Receita do Mes</span>
     <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
     <strong>{{ receita_mes|brl }}</strong>
+    <form class="report-card-form" method="get" action="{% url 'relatorios_pdf' 'receitas' %}" target="_blank">
+      <label><span>Inicio</span><input type="date" name="inicio" value="{{ periodo_inicio }}"></label>
+      <label><span>Fim</span><input type="date" name="fim" value="{{ periodo_fim }}"></label>
+      <button class="button compact-button" type="submit"><i data-lucide="file-text"></i>PDF</button>
+    </form>
   </article>
   <article class="panel report-card">
-    <div class="report-card-head">
-      <span>Despesas do Mes</span>
-      <button class="icon-link report-download" type="button" data-report-download="despesas" title="Baixar relatorio"><i data-lucide="download"></i></button>
-    </div>
+    <span class="card-title">Despesas do Mes</span>
     <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
     <strong>{{ despesa_mes|brl }}</strong>
+    <form class="report-card-form" method="get" action="{% url 'relatorios_pdf' 'despesas' %}" target="_blank">
+      <label><span>Inicio</span><input type="date" name="inicio" value="{{ periodo_inicio }}"></label>
+      <label><span>Fim</span><input type="date" name="fim" value="{{ periodo_fim }}"></label>
+      <button class="button compact-button" type="submit"><i data-lucide="file-text"></i>PDF</button>
+    </form>
   </article>
   <article class="panel report-card">
-    <div class="report-card-head">
-      <span>Eventos no Mes</span>
-      <button class="icon-link report-download" type="button" data-report-download="eventos" title="Baixar relatorio"><i data-lucide="download"></i></button>
-    </div>
+    <span class="card-title">Eventos no Mes</span>
     <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
     <strong>{{ eventos_mes }}</strong>
+    <form class="report-card-form" method="get" action="{% url 'relatorios_pdf' 'eventos' %}" target="_blank">
+      <label><span>Inicio</span><input type="date" name="inicio" value="{{ periodo_inicio }}"></label>
+      <label><span>Fim</span><input type="date" name="fim" value="{{ periodo_fim }}"></label>
+      <button class="button compact-button" type="submit"><i data-lucide="file-text"></i>PDF</button>
+    </form>
   </article>
 </section>
 
 <section class="report-card-grid">
   <article class="panel report-card">
-    <div class="report-card-head">
-      <span>Vendas recentes</span>
-      <button class="icon-link report-download" type="button" data-report-download="vendas" title="Baixar relatorio"><i data-lucide="download"></i></button>
-    </div>
+    <span class="card-title">Vendas recentes</span>
     <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
     <strong>{{ vendas_recentes|length }}</strong>
+    <form class="report-card-form" method="get" action="{% url 'relatorios_pdf' 'vendas' %}" target="_blank">
+      <label><span>Inicio</span><input type="date" name="inicio" value="{{ periodo_inicio }}"></label>
+      <label><span>Fim</span><input type="date" name="fim" value="{{ periodo_fim }}"></label>
+      <button class="button compact-button" type="submit"><i data-lucide="file-text"></i>PDF</button>
+    </form>
     <button class="button ghost report-detail-button report-trigger" type="button" data-report-target="vendasRecentesPainel"><i data-lucide="list"></i>Ver detalhes</button>
   </article>
   <article class="panel report-card">
-    <div class="report-card-head">
-      <span>Eventos recentes</span>
-      <button class="icon-link report-download" type="button" data-report-download="eventos-recentes" title="Baixar relatorio"><i data-lucide="download"></i></button>
-    </div>
+    <span class="card-title">Eventos recentes</span>
     <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
     <strong>{{ eventos_recentes|length }}</strong>
+    <form class="report-card-form" method="get" action="{% url 'relatorios_pdf' 'eventos-recentes' %}" target="_blank">
+      <label><span>Inicio</span><input type="date" name="inicio" value="{{ periodo_inicio }}"></label>
+      <label><span>Fim</span><input type="date" name="fim" value="{{ periodo_fim }}"></label>
+      <button class="button compact-button" type="submit"><i data-lucide="file-text"></i>PDF</button>
+    </form>
     <button class="button ghost report-detail-button report-trigger" type="button" data-report-target="eventosRecentesPainel"><i data-lucide="list"></i>Ver detalhes</button>
   </article>
 </section>
-
-<div
-  class="modal-backdrop"
-  id="reportDownloadModal"
-  data-report-url-template="{% url 'relatorios_pdf' 'TIPO' 2000 1 %}"
-  hidden
->
-  <div class="modal-panel report-download-modal" role="dialog" aria-modal="true" aria-labelledby="reportDownloadTitle">
-    <button class="modal-close" type="button" data-report-download-close aria-label="Fechar"><i data-lucide="x"></i></button>
-    <h3 id="reportDownloadTitle">Baixar relatorio</h3>
-    <p>Selecione o mes que deseja imprimir em PDF.</p>
-    <form class="report-download-form" data-report-download-form>
-      <input type="hidden" name="tipo" data-report-download-kind>
-      <label for="reportDownloadMonth">Mes do relatorio</label>
-      <input id="reportDownloadMonth" type="month" name="mes" value="{{ inicio_mes|date:'Y-m' }}" required>
-      <button class="button" type="submit"><i data-lucide="file-down"></i>Gerar PDF</button>
-    </form>
-  </div>
-</div>
 
 <section class="report-popups">
   <article class="panel report-popup" id="vendasRecentesPainel" hidden>
@@ -119,10 +110,6 @@
 
 <script>
   window.addEventListener("DOMContentLoaded", function () {
-    var downloadModal = document.getElementById("reportDownloadModal");
-    var downloadForm = document.querySelector("[data-report-download-form]");
-    var downloadKind = document.querySelector("[data-report-download-kind]");
-
     document.querySelectorAll("[data-report-target]").forEach(function (button) {
       button.addEventListener("click", function () {
         var panel = document.getElementById(button.dataset.reportTarget);
@@ -138,38 +125,8 @@
       });
     });
 
-    document.querySelectorAll("[data-report-download]").forEach(function (button) {
-      button.addEventListener("click", function () {
-        downloadKind.value = button.dataset.reportDownload;
-        downloadModal.hidden = false;
-        downloadModal.querySelector("input[type='month']").focus();
-      });
-    });
-
-    document.querySelectorAll("[data-report-download-close]").forEach(function (button) {
-      button.addEventListener("click", function () {
-        downloadModal.hidden = true;
-      });
-    });
-
-    downloadModal.addEventListener("click", function (event) {
-      if (event.target === downloadModal) downloadModal.hidden = true;
-    });
-
-    downloadForm.addEventListener("submit", function (event) {
-      event.preventDefault();
-      var parts = downloadForm.mes.value.split("-");
-      if (parts.length !== 2 || !downloadKind.value) return;
-      var url = downloadModal.dataset.reportUrlTemplate
-        .replace("TIPO", downloadKind.value)
-        .replace("/2000/1/", "/" + parts[0] + "/" + Number(parts[1]) + "/");
-      window.open(url, "_blank", "noopener");
-      downloadModal.hidden = true;
-    });
-
     document.addEventListener("keydown", function (event) {
       if (event.key !== "Escape") return;
-      if (!downloadModal.hidden) downloadModal.hidden = true;
       document.querySelectorAll(".report-popup:not([hidden])").forEach(function (panel) {
         panel.hidden = true;
       });

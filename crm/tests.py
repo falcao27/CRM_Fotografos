@@ -1,3 +1,4 @@
+from calendar import monthrange
 from io import BytesIO
 from decimal import Decimal
 
@@ -315,7 +316,7 @@ class DespesasTests(TestCase):
             status="pago",
         )
 
-        response = self.client.get(reverse("relatorios_pdf", args=["despesas", 2026, 6]))
+        response = self.client.get(reverse("relatorios_pdf", args=["despesas"]), {"inicio": "2026-06-01", "fim": "2026-06-30"})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "application/pdf")
@@ -511,7 +512,10 @@ class FinanceiroReceitasTests(TestCase):
             adiantamento_pago=True,
         )
 
-        response = self.client.get(reverse("relatorios_pdf", args=["receita", hoje.year, hoje.month]))
+        response = self.client.get(
+            reverse("relatorios_pdf", args=["receitas"]),
+            {"inicio": hoje.replace(day=1).isoformat(), "fim": hoje.replace(day=monthrange(hoje.year, hoje.month)[1]).isoformat()},
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Adiantamento", response.content)

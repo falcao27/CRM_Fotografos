@@ -1684,10 +1684,24 @@ def eventos(request):
     return render(request, "crm/eventos.html", {"grupos_eventos": grupos_eventos, "busca": busca})
 
 
-def relatorios(request):
+def periodo_relatorio_request(request):
     hoje = timezone.localdate()
-    inicio_mes = hoje.replace(day=1)
-    fim_mes = hoje.replace(day=monthrange(hoje.year, hoje.month)[1])
+    inicio_padrao = hoje.replace(day=1)
+    fim_padrao = hoje.replace(day=monthrange(hoje.year, hoje.month)[1])
+    try:
+        inicio_mes = date.fromisoformat(request.GET.get("inicio", "")) if request.GET.get("inicio") else inicio_padrao
+    except ValueError:
+        inicio_mes = inicio_padrao
+    try:
+        fim_mes = date.fromisoformat(request.GET.get("fim", "")) if request.GET.get("fim") else fim_padrao
+    except ValueError:
+        fim_mes = fim_padrao
+    if inicio_mes > fim_mes:
+        inicio_mes, fim_mes = fim_mes, inicio_mes
+    return inicio_mes, fim_mes
+
+
+def dados_relatorio_periodo(request, inicio_mes, fim_mes):
     vendas_mes = filtrar_empresa(Venda.objects.filter(evento__isnull=False), request).exclude(status="cancelado").filter(
         data_venda__range=(inicio_mes, fim_mes)
     )
@@ -1705,9 +1719,12 @@ def relatorios(request):
     eventos_mes = filtrar_empresa(Evento.objects.filter(
         Q(criado_em__date__range=(inicio_mes, fim_mes)) | Q(atualizado_em__date__range=(inicio_mes, fim_mes))
     ), request).distinct()
-    contexto = {
-        "inicio_mes": inicio_mes,
-        "fim_mes": fim_mes,
+    return {
+        "vendas_mes": vendas_mes,
+        "parcelas_recebidas_mes": parcelas_recebidas_mes,
+        "adiantamentos_recebidos_mes": adiantamentos_recebidos_mes,
+        "despesas_mes": despesas_mes,
+        "eventos_mes_qs": eventos_mes,
         "receita_mes": (parcelas_recebidas_mes.aggregate(total=Sum("valor_recebido"))["total"] or 0)
         + (adiantamentos_recebidos_mes.aggregate(total=Sum("adiantamento"))["total"] or 0),
         "despesa_mes": despesas_mes.aggregate(total=Sum("valor"))["total"] or 0,
@@ -1715,40 +1732,44 @@ def relatorios(request):
         "vendas_recentes": vendas_mes.select_related("cliente")[:8],
         "eventos_recentes": eventos_mes.select_related("cliente", "venda").order_by("-atualizado_em")[:8],
     }
+
+
+def relatorios(request):
+    inicio_mes, fim_mes = periodo_relatorio_request(request)
+    dados = dados_relatorio_periodo(request, inicio_mes, fim_mes)
+    contexto = {
+        "inicio_mes": inicio_mes,
+        "fim_mes": fim_mes,
+        "periodo_inicio": inicio_mes.isoformat(),
+        "periodo_fim": fim_mes.isoformat(),
+        "receita_mes": dados["receita_mes"],
+        "despesa_mes": dados["despesa_mes"],
+        "eventos_mes": dados["eventos_mes"],
+        "vendas_recentes": dados["vendas_recentes"],
+        "eventos_recentes": dados["eventos_recentes"],
+    }
     return render(request, "crm/relatorios.html", contexto)
 
 
-def relatorios_pdf(request, tipo, ano, mes):
+def relatorios_pdf(request, tipo):
     tipos = {
-        "receita": "Receita do Mes",
+        "receitas": "Receita do Mes",
         "despesas": "Despesas do Mes",
         "eventos": "Eventos no Mes",
         "vendas": "Vendas recentes",
         "eventos-recentes": "Eventos recentes",
     }
-    if tipo not in tipos or mes < 1 or mes > 12:
+    if tipo not in tipos:
         return redirect("relatorios")
 
-    inicio = date(ano, mes, 1)
-    fim = inicio.replace(day=monthrange(ano, mes)[1])
+    inicio, fim = periodo_relatorio_request(request)
+    dados = dados_relatorio_periodo(request, inicio, fim)
     periodo = f"Periodo: {inicio:%d/%m/%Y} ate {fim:%d/%m/%Y}"
-    titulo = f"{tipos[tipo]} - {MESES_PT[mes - 1]} {ano}"
+    titulo = f"{tipos[tipo]} - {inicio:%d/%m/%Y} a {fim:%d/%m/%Y}"
 
-    if tipo == "receita":
-        parcelas = filtrar_parcelas_empresa(Parcela.objects.filter(
-            venda__evento__isnull=False,
-            data_pagamento__range=(inicio, fim),
-        ).select_related("venda", "venda__cliente"), request)
-        adiantamentos = (
-            filtrar_empresa(Evento.objects.filter(
-                venda__isnull=False,
-                adiantamento__gt=0,
-                adiantamento_pago=True,
-                venda__data_venda__range=(inicio, fim),
-            ), request)
-            .exclude(venda__status="cancelado")
-            .select_related("cliente", "venda")
-        )
+    if tipo == "receitas":
+        parcelas = dados["parcelas_recebidas_mes"].select_related("venda", "venda__cliente")
+        adiantamentos = dados["adiantamentos_recebidos_mes"].select_related("cliente", "venda")
         total_parcelas = parcelas.aggregate(total=Sum("valor_recebido"))["total"] or Decimal("0.00")
         total_adiantamentos = adiantamentos.aggregate(total=Sum("adiantamento"))["total"] or Decimal("0.00")
         total = total_parcelas + total_adiantamentos
@@ -1775,9 +1796,7 @@ def relatorios_pdf(request, tipo, ano, mes):
         cabecalho = ["Cliente", "Venda", "Parcela", "Pagamento", "Valor"]
         resumo = f"Total recebido: R$ {total_brl(total)}"
     elif tipo == "despesas":
-        despesas = filtrar_empresa(Despesa.objects.filter(filtro_data_financeira_despesa(inicio, fim)), request).order_by(
-            "vencimento", "data", "descricao"
-        )
+        despesas = dados["despesas_mes"].order_by("vencimento", "data", "descricao")
         total = despesas.aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
         linhas = [
             [
@@ -1806,12 +1825,7 @@ def relatorios_pdf(request, tipo, ano, mes):
         cabecalho = ["Evento", "Tipo", "Data", "Cliente", "Valor"]
         resumo = f"Total de eventos: {eventos.count()}"
     elif tipo == "vendas":
-        vendas = (
-            filtrar_empresa(Venda.objects.filter(evento__isnull=False), request)
-            .exclude(status="cancelado")
-            .filter(data_venda__range=(inicio, fim))
-            .select_related("cliente")
-        )
+        vendas = dados["vendas_mes"].select_related("cliente")
         total = vendas.aggregate(total=Sum("valor_total"))["total"] or Decimal("0.00")
         linhas = [
             [
@@ -1826,9 +1840,7 @@ def relatorios_pdf(request, tipo, ano, mes):
         cabecalho = ["Cliente", "Venda", "Data", "Status", "Valor"]
         resumo = f"Total vendido: R$ {total_brl(total)}"
     else:
-        eventos = filtrar_empresa(Evento.objects.filter(
-            Q(criado_em__date__range=(inicio, fim)) | Q(atualizado_em__date__range=(inicio, fim))
-        ), request).distinct().select_related("cliente", "venda")
+        eventos = dados["eventos_mes_qs"].select_related("cliente", "venda")
         linhas = [
             [
                 evento.nome,
@@ -1846,7 +1858,7 @@ def relatorios_pdf(request, tipo, ano, mes):
         gerar_pdf_relatorio_simples(titulo, periodo, resumo, cabecalho, linhas),
         content_type="application/pdf",
     )
-    response["Content-Disposition"] = f'inline; filename="relatorio_{tipo}_{ano}_{mes:02d}.pdf"'
+    response["Content-Disposition"] = f'inline; filename="relatorio_{tipo}_{inicio:%Y%m%d}_{fim:%Y%m%d}.pdf"'
     return response
 
 

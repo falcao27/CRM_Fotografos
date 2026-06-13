@@ -52,8 +52,6 @@
     </div>
   </section>
 
-  <input type="hidden" name="{{ form.conteudo_contrato.html_name }}" value="{{ form.conteudo_contrato.value|default_if_none:'' }}">
-
   <section class="form-panel document-form-panel">
     <div class="document-form-grid document-form-grid-small">
       <label>
@@ -78,6 +76,8 @@
       </label>
     </div>
   </section>
+
+  <input type="hidden" name="{{ form.conteudo_contrato.html_name }}" value="{{ form.conteudo_contrato.value|default_if_none:'' }}">
 
   <div class="row-actions document-actions">
     <button class="button" type="submit"><i data-lucide="save"></i>Salvar contrato</button>
