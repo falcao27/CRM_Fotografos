@@ -1,12 +1,43 @@
 from django.urls import path
+from django.contrib.auth import views as auth_views
 
 from . import views
 
 
 urlpatterns = [
     path("login/", views.login_view, name="login"),
+    path("login/google/", views.google_login, name="google_login"),
+    path("login/google/callback/", views.google_callback, name="google_callback"),
     path("logout/", views.logout_view, name="logout"),
     path("cadastro/", views.cadastro_usuario, name="cadastro"),
+    path(
+        "senha/esqueci/",
+        auth_views.PasswordResetView.as_view(
+            template_name="crm/password_reset_form.html",
+            email_template_name="crm/password_reset_email.html",
+            subject_template_name="crm/password_reset_subject.txt",
+            success_url="/senha/enviada/",
+        ),
+        name="password_reset",
+    ),
+    path(
+        "senha/enviada/",
+        auth_views.PasswordResetDoneView.as_view(template_name="crm/password_reset_done.html"),
+        name="password_reset_done",
+    ),
+    path(
+        "senha/redefinir/<uidb64>/<token>/",
+        auth_views.PasswordResetConfirmView.as_view(
+            template_name="crm/password_reset_confirm.html",
+            success_url="/senha/concluida/",
+        ),
+        name="password_reset_confirm",
+    ),
+    path(
+        "senha/concluida/",
+        auth_views.PasswordResetCompleteView.as_view(template_name="crm/password_reset_complete.html"),
+        name="password_reset_complete",
+    ),
     path("admin-master/", views.admin_master, name="admin_master"),
     path("admin-master/financeiro/", views.admin_financeiro, name="admin_financeiro"),
     path("admin-master/financeiro/empresa/nova/", views.admin_empresa_form, name="admin_empresa_nova"),

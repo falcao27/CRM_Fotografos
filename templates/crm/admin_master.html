@@ -1,13 +1,137 @@
 {% extends "base.html" %}
+{% load crm_format %}
 
 {% block page_title %}Admin Master{% endblock %}
-{% block page_subtitle %}Ranking de uso das empresas no CRM.{% endblock %}
+{% block page_subtitle %}Controle geral de contratos, empresas e acessos do CRM.{% endblock %}
 
 {% block content %}
-<section class="admin-master-actions">
-  <button class="button ghost" type="button" data-open-access-modal>
-    <i data-lucide="history"></i>Ultimos acessos
-  </button>
+<section class="toolbar admin-master-toolbar">
+  <div class="admin-master-summary">
+    <strong>Visao administrativa</strong>
+    <span>{{ empresas_ativas }} empresas ativas de {{ total_empresas }} cadastradas</span>
+  </div>
+  <div class="toolbar-actions">
+    <button class="button ghost" type="button" data-open-access-modal>
+      <i data-lucide="history"></i>Ultimos acessos
+    </button>
+    <a class="button ghost" href="{% url 'admin_empresa_nova' %}">
+      <i data-lucide="building-2"></i>Novo cliente
+    </a>
+    <a class="button" href="{% url 'admin_contrato_novo' %}">
+      <i data-lucide="file-plus-2"></i>Novo contrato
+    </a>
+  </div>
+</section>
+
+<section class="admin-kpi-grid">
+  <article class="metric">
+    <i data-lucide="building-2"></i>
+    <span>Empresas ativas</span>
+    <strong>{{ empresas_ativas }}</strong>
+  </article>
+  <article class="metric">
+    <i data-lucide="file-check-2"></i>
+    <span>Contratos em aberto</span>
+    <strong>{{ contratos_ativos }}</strong>
+  </article>
+  <article class="metric danger-metric">
+    <i data-lucide="triangle-alert"></i>
+    <span>Contratos atrasados</span>
+    <strong>{{ contratos_atrasados }}</strong>
+  </article>
+  <article class="metric">
+    <i data-lucide="circle-dollar-sign"></i>
+    <span>Total contratado</span>
+    <strong>{{ receita_total|brl }}</strong>
+  </article>
+</section>
+
+<section class="finance-summary admin-money-summary">
+  <article class="money-card income">
+    <div><span>Recebido</span><small>Contratos pagos</small><strong>{{ receita_recebida|brl }}</strong></div>
+  </article>
+  <article class="money-card balance">
+    <div><span>A receber</span><small>Pendentes e atrasados</small><strong>{{ receita_aberta|brl }}</strong></div>
+  </article>
+  <article class="money-card expense">
+    <div><span>Em atraso</span><small>Precisa de cobranca</small><strong>{{ receita_atrasada|brl }}</strong></div>
+  </article>
+</section>
+
+<section class="admin-dashboard-grid">
+  <article class="panel">
+    <div class="panel-head">
+      <h2>Contratos vencendo</h2>
+      <a class="icon-link" href="{% url 'admin_cobrancas' %}" title="Abrir cobrancas"><i data-lucide="arrow-up-right"></i></a>
+    </div>
+    <div class="list">
+      {% for contrato in contratos_vencendo %}
+        <div class="list-row contract-alert-row">
+          <div>
+            <strong>{{ contrato.empresa.nome }}</strong>
+            <span>{{ contrato.descricao }}</span>
+            <small>Vence em {{ contrato.vencimento|date:"d/m/Y" }}</small>
+          </div>
+          <div class="contract-alert-value">
+            <b>{{ contrato.valor|brl }}</b>
+            <span class="badge {{ contrato.status }}">{{ contrato.get_status_display }}</span>
+          </div>
+        </div>
+      {% empty %}
+        <p class="empty">Nenhum contrato vencendo nos proximos 7 dias.</p>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head"><h2>Ultimos acessos</h2></div>
+    <div class="list">
+      {% for acesso in ultimos_acessos %}
+        <div class="list-row">
+          <div>
+            <strong>{{ acesso.user.username }}</strong>
+            <span>{{ acesso.empresa.nome|default:"Admin master" }}</span>
+          </div>
+          <b>{{ acesso.criado_em|date:"d/m H:i" }}</b>
+        </div>
+      {% empty %}
+        <p class="empty">Nenhum acesso registrado.</p>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Controle de contratos</h2>
+    <a class="button ghost" href="{% url 'admin_financeiro' %}"><i data-lucide="wallet-cards"></i>Ver financeiro</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Cliente/empresa</th>
+          <th>Contrato</th>
+          <th>Vencimento</th>
+          <th>Status</th>
+          <th>Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for contrato in contratos_recentes %}
+          <tr>
+            <td><strong>{{ contrato.empresa.nome }}</strong><br><small>{{ contrato.empresa.email|default:"Email nao informado" }}</small></td>
+            <td>{{ contrato.descricao }}</td>
+            <td>{{ contrato.vencimento|date:"d/m/Y" }}</td>
+            <td><span class="badge {{ contrato.status }}">{{ contrato.get_status_display }}</span></td>
+            <td>{{ contrato.valor|brl }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5">Nenhum contrato administrativo cadastrado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section class="panel">
@@ -72,6 +196,8 @@
     const modal = document.getElementById("accessModal");
     const openButton = document.querySelector("[data-open-access-modal]");
     const closeButton = document.querySelector("[data-close-access-modal]");
+
+    if (!modal || !openButton || !closeButton) return;
 
     openButton.addEventListener("click", function () {
       modal.hidden = false;

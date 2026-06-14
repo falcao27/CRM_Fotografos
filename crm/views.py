@@ -1,22 +1,29 @@
 import csv
 import io
+import json
 import unicodedata
+import urllib.error
+import urllib.request
 import zipfile
 from calendar import Calendar, monthrange
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from html import escape
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from xml.etree import ElementTree as ET
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import authenticate, login as session_login, logout as session_logout
+from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.http import HttpResponse
 from django.db.models import Case, Count, DecimalField, F, Q, Sum, When
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.crypto import get_random_string
 from django.utils import timezone
 
 from .forms import (
@@ -365,42 +372,93 @@ def exigir_admin_master(request):
     return redirect("dashboard")
 
 
+def usuario_admin_por_email(email):
+    if not email:
+        return None
+    qs = (
+        User.objects.filter(email__iexact=email.strip(), is_active=True)
+        .filter(Q(is_superuser=True) | Q(perfil_crm__papel="admin_master"))
+        .select_related("perfil_crm")
+        .distinct()
+    )
+    email_master = getattr(settings, "CRM_MASTER_ADMIN_EMAIL", "").strip().lower()
+    if email_master:
+        qs = qs.filter(email__iexact=email_master)
+    return qs.first()
+
+
+def usuario_cliente_por_login(login):
+    if not login:
+        return None
+    return (
+        User.objects.filter(username__iexact=login.strip(), is_active=True)
+        .select_related("perfil_crm", "perfil_crm__empresa")
+        .first()
+    )
+
+
+def perfil_cliente_valido(user):
+    perfil = getattr(user, "perfil_crm", None)
+    return bool(perfil and not perfil.admin_master and perfil.empresa_id and perfil.empresa and perfil.empresa.ativa)
+
+
+def google_oauth_disponivel():
+    return bool(settings.GOOGLE_OAUTH_CLIENT_ID and settings.GOOGLE_OAUTH_CLIENT_SECRET)
+
+
+def login_usuario_seguro(request, user, destino=None):
+    session_login(request, user)
+    destino_final = destino or ("admin_master" if usuario_admin_master(user) else "dashboard")
+    response = redirect(destino_final)
+    response.set_cookie(
+        JWT_COOKIE_NAME,
+        gerar_token(user),
+        max_age=JWT_MAX_AGE,
+        httponly=True,
+        samesite="Lax",
+        secure=not settings.DEBUG,
+    )
+    return response
+
+
 def login_view(request):
     if request.user.is_authenticated:
-        return redirect("dashboard")
+        return redirect("admin_master" if usuario_admin_master(request.user) else "dashboard")
 
     if request.method == "POST":
         username = request.POST.get("username", "").strip()
         password = request.POST.get("password", "")
         tipo_login = request.POST.get("tipo_login", "cliente")
-        user = authenticate(request, username=username, password=password)
-        if user and user.is_active:
-            perfil, _ = PerfilUsuario.objects.get_or_create(user=user)
-            admin_master = user.is_superuser or perfil.admin_master
-            if tipo_login == "admin" and not admin_master:
-                messages.error(request, "Este acesso nao pertence ao admin.")
-                return render(request, "crm/login.html", {"next": request.GET.get("next", ""), "tipo_login": tipo_login})
-            if tipo_login == "cliente" and admin_master:
-                messages.error(request, "Use o acesso de admin para este usuario.")
-                return render(request, "crm/login.html", {"next": request.GET.get("next", ""), "tipo_login": tipo_login})
-            session_login(request, user)
-            destino = "admin_master" if admin_master else "dashboard"
-            response = redirect(request.POST.get("next") or request.GET.get("next") or destino)
-            response.set_cookie(
-                JWT_COOKIE_NAME,
-                gerar_token(user),
-                max_age=JWT_MAX_AGE,
-                httponly=True,
-                samesite="Lax",
-                secure=request.is_secure(),
-            )
-            return response
+        contexto = {
+            "next": request.GET.get("next", ""),
+            "tipo_login": tipo_login,
+            "google_oauth_disponivel": google_oauth_disponivel(),
+        }
+
+        if tipo_login == "admin":
+            user = usuario_admin_por_email(username)
+            if user and authenticate(request, username=user.username, password=password):
+                return login_usuario_seguro(request, user, request.POST.get("next") or request.GET.get("next") or "admin_master")
+            messages.error(request, "Email ou senha de administrador invalidos.")
+            return render(request, "crm/login.html", contexto)
+
+        user = usuario_cliente_por_login(username)
+        if user and perfil_cliente_valido(user) and authenticate(request, username=user.username, password=password):
+            return login_usuario_seguro(request, user, request.POST.get("next") or request.GET.get("next") or "dashboard")
         messages.error(request, "Usuario ou senha invalidos.")
 
     tipo_login = request.GET.get("tipo", "cliente")
     if tipo_login not in ["cliente", "admin"]:
         tipo_login = "cliente"
-    return render(request, "crm/login.html", {"next": request.GET.get("next", ""), "tipo_login": tipo_login})
+    return render(
+        request,
+        "crm/login.html",
+        {
+            "next": request.GET.get("next", ""),
+            "tipo_login": tipo_login,
+            "google_oauth_disponivel": google_oauth_disponivel(),
+        },
+    )
 
 
 def logout_view(request):
@@ -408,6 +466,104 @@ def logout_view(request):
     response = redirect("login")
     response.delete_cookie(JWT_COOKIE_NAME)
     return response
+
+
+def google_redirect_uri(request):
+    return request.build_absolute_uri(reverse("google_callback"))
+
+
+def google_login(request):
+    if not google_oauth_disponivel():
+        messages.error(request, "Login com Google ainda nao foi configurado.")
+        return redirect("login")
+
+    state = get_random_string(32)
+    request.session["google_oauth_state"] = state
+    request.session["google_oauth_next"] = request.GET.get("next", "")
+    params = urlencode(
+        {
+            "client_id": settings.GOOGLE_OAUTH_CLIENT_ID,
+            "redirect_uri": google_redirect_uri(request),
+            "response_type": "code",
+            "scope": "openid email profile",
+            "state": state,
+            "prompt": "select_account",
+        }
+    )
+    return redirect(f"https://accounts.google.com/o/oauth2/v2/auth?{params}")
+
+
+def google_callback(request):
+    if not google_oauth_disponivel():
+        messages.error(request, "Login com Google ainda nao foi configurado.")
+        return redirect("login")
+    if request.GET.get("state") != request.session.pop("google_oauth_state", None):
+        messages.error(request, "Validacao do Google recusada. Tente novamente.")
+        return redirect("login")
+    code = request.GET.get("code")
+    if not code:
+        messages.error(request, "O Google nao retornou autorizacao.")
+        return redirect("login")
+
+    try:
+        token_request = urllib.request.Request(
+            "https://oauth2.googleapis.com/token",
+            data=urlencode(
+                {
+                    "code": code,
+                    "client_id": settings.GOOGLE_OAUTH_CLIENT_ID,
+                    "client_secret": settings.GOOGLE_OAUTH_CLIENT_SECRET,
+                    "redirect_uri": google_redirect_uri(request),
+                    "grant_type": "authorization_code",
+                }
+            ).encode(),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        with urllib.request.urlopen(token_request, timeout=10) as response:
+            token = json.loads(response.read().decode("utf-8"))
+        userinfo_request = urllib.request.Request(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {token.get('access_token', '')}"},
+        )
+        with urllib.request.urlopen(userinfo_request, timeout=10) as response:
+            profile = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, ValueError, KeyError):
+        messages.error(request, "Nao foi possivel validar sua conta Google.")
+        return redirect("login")
+
+    email = (profile.get("email") or "").strip().lower()
+    if not email or not profile.get("email_verified"):
+        messages.error(request, "Use uma conta Google com email verificado.")
+        return redirect("login")
+
+    user = User.objects.filter(email__iexact=email, is_active=True).select_related("perfil_crm", "perfil_crm__empresa").first()
+    if user and usuario_admin_master(user):
+        messages.error(request, "Conta Google nao acessa o painel admin.")
+        return redirect("login")
+    if not user:
+        base_username = (email.split("@")[0] or "cliente")[:24]
+        username = base_username
+        contador = 1
+        while User.objects.filter(username__iexact=username).exists():
+            contador += 1
+            username = f"{base_username}{contador}"[:30]
+        empresa = Empresa.objects.create(nome=profile.get("name") or email, email=email)
+        user = User.objects.create_user(
+            username=username,
+            email=email,
+            first_name=(profile.get("given_name") or profile.get("name") or "")[:150],
+            is_staff=False,
+        )
+        user.set_unusable_password()
+        user.save(update_fields=["password"])
+        PerfilUsuario.objects.create(user=user, empresa=empresa, papel="empresa_admin")
+
+    if not perfil_cliente_valido(user):
+        messages.error(request, "Seu usuario nao esta vinculado a uma empresa ativa.")
+        return redirect("login")
+
+    destino = request.session.pop("google_oauth_next", "") or "dashboard"
+    return login_usuario_seguro(request, user, destino)
 
 
 def cadastro_usuario(request):
@@ -422,12 +578,19 @@ def cadastro_usuario(request):
             messages.error(request, "Preencha empresa, nome, usuario e senha.")
         elif User.objects.filter(username=username).exists():
             messages.error(request, "Este usuario ja existe.")
+        elif email and User.objects.filter(email__iexact=email).exists():
+            messages.error(request, "Este email ja esta em uso.")
         else:
-            empresa = Empresa.objects.create(nome=empresa_nome, email=email)
-            user = User.objects.create_user(username=username, password=password, email=email, first_name=nome, is_staff=True)
-            PerfilUsuario.objects.create(user=user, empresa=empresa, papel="empresa_admin")
-            messages.success(request, "Cadastro criado. Agora faca login.")
-            return redirect("login")
+            try:
+                validate_password(password)
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+            else:
+                empresa = Empresa.objects.create(nome=empresa_nome, email=email)
+                user = User.objects.create_user(username=username, password=password, email=email, first_name=nome, is_staff=False)
+                PerfilUsuario.objects.create(user=user, empresa=empresa, papel="empresa_admin")
+                messages.success(request, "Cadastro criado. Agora faca login.")
+                return redirect("login")
 
     return render(request, "crm/cadastro.html")
 
@@ -437,6 +600,8 @@ def admin_master(request):
     if bloqueio:
         return bloqueio
 
+    hoje = timezone.localdate()
+    limite_vencimento = hoje + timedelta(days=7)
     try:
         dias_acesso = int(request.GET.get("dias", 7))
     except ValueError:
@@ -448,11 +613,26 @@ def admin_master(request):
         Empresa.objects.annotate(total_acessos=Count("acessos"))
         .order_by("-total_acessos", "nome")
     )
+    contratos = ContratoAdminEmpresa.objects.select_related("empresa")
+    contratos_abertos = contratos.exclude(status__in=["pago", "cancelado"])
+    contratos_atrasados = contratos_abertos.filter(Q(status="atrasado") | Q(vencimento__lt=hoje))
+    contratos_vencendo = contratos_abertos.filter(vencimento__range=(hoje, limite_vencimento)).order_by("vencimento")
     contexto = {
         "ranking_empresas": ranking,
         "acessos": AcessoUsuario.objects.select_related("user", "empresa").filter(criado_em__gte=inicio_acessos)[:50],
         "dias_acesso": dias_acesso,
         "acesso_modal_aberto": request.GET.get("acessos") == "1",
+        "total_empresas": Empresa.objects.count(),
+        "empresas_ativas": Empresa.objects.filter(ativa=True).count(),
+        "contratos_ativos": contratos_abertos.count(),
+        "contratos_atrasados": contratos_atrasados.count(),
+        "receita_total": contratos.aggregate(total=Sum("valor"))["total"] or Decimal("0.00"),
+        "receita_recebida": contratos.filter(status="pago").aggregate(total=Sum("valor"))["total"] or Decimal("0.00"),
+        "receita_aberta": contratos_abertos.aggregate(total=Sum("valor"))["total"] or Decimal("0.00"),
+        "receita_atrasada": contratos_atrasados.aggregate(total=Sum("valor"))["total"] or Decimal("0.00"),
+        "contratos_vencendo": contratos_vencendo[:6],
+        "contratos_recentes": contratos.order_by("-criado_em")[:8],
+        "ultimos_acessos": AcessoUsuario.objects.select_related("user", "empresa")[:6],
     }
     return render(request, "crm/admin_master.html", contexto)
 

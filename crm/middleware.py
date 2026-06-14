@@ -12,6 +12,7 @@ from .models import AcessoUsuario, PerfilUsuario
 
 PUBLIC_PATH_PREFIXES = (
     "/login/",
+    "/senha/",
     "/cadastro/",
     "/logout/",
     "/static/",

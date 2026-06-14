@@ -463,12 +463,21 @@ h2 {
   width: min(460px, 100%);
 }
 
+.auth-shell-pro {
+  width: min(520px, 100%);
+}
+
 .auth-panel {
   padding: 28px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: 0 24px 70px rgba(23, 35, 33, .16);
+}
+
+.auth-panel-pro {
+  display: grid;
+  gap: 18px;
 }
 
 .auth-panel-wide {
@@ -537,16 +546,28 @@ h2 {
   color: var(--muted);
 }
 
+.auth-heading h1,
+.auth-heading p {
+  margin-bottom: 0;
+}
+
 .auth-form {
   display: grid;
   gap: 10px;
 }
 
-.auth-form label {
+.auth-form label,
+.auth-form p label {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.auth-form p {
+  display: grid;
+  gap: 6px;
+  margin: 0;
 }
 
 .auth-form .button,
@@ -561,6 +582,51 @@ h2 {
   color: var(--accent-dark);
   font-weight: 800;
   text-decoration: none;
+}
+
+.auth-link.inline {
+  margin-top: 0;
+  font-size: 13px;
+}
+
+.auth-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.auth-client-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--line);
+}
+
+.auth-google {
+  width: 100%;
+  min-height: 40px;
+  border-color: #d7e1dc;
+  background: #fff;
+}
+
+.auth-google:disabled {
+  opacity: .58;
+  cursor: not-allowed;
 }
 
 .auth-register-link {
@@ -688,8 +754,59 @@ h2 {
   text-transform: uppercase;
 }
 
-.admin-master-actions {
-  min-height: 68vh;
+.admin-master-toolbar {
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.admin-master-summary {
+  display: grid;
+  gap: 4px;
+}
+
+.admin-master-summary strong {
+  font-size: 16px;
+}
+
+.admin-master-summary span {
+  color: var(--muted);
+}
+
+.admin-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.admin-kpi-grid .metric {
+  min-height: 96px;
+}
+
+.admin-kpi-grid .metric strong {
+  overflow-wrap: anywhere;
+}
+
+.admin-money-summary {
+  margin-bottom: 14px;
+}
+
+.admin-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.contract-alert-row {
+  align-items: flex-start;
+}
+
+.contract-alert-value {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+  text-align: right;
 }
 
 .access-modal {
@@ -2957,6 +3074,8 @@ input[readonly] {
     .document-form-grid-small,
     .finance-summary,
   .pipeline-report,
+  .admin-kpi-grid,
+  .admin-dashboard-grid,
   .metric-grid,
   .report-card-grid,
   .dashboard-grid,
@@ -2993,6 +3112,11 @@ input[readonly] {
   .toolbar-actions,
   .import-form {
     width: 100%;
+  }
+
+  .contract-alert-value {
+    justify-items: start;
+    text-align: left;
   }
 
   .button {
