@@ -1,26 +1,3 @@
 {
-  "version": 2,
-  "buildCommand": "bash build.sh",
-  "builds": [
-    {
-      "src": "crm_fotografos/wsgi.py",
-      "use": "@vercel/python",
-      "config": { "maxLambdaSize": "15mb" }
-    },
-    {
-      "src": "build.sh",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "staticfiles" }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/static/(.*)",
-      "dest": "/static/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "crm_fotografos/wsgi.py"
-    }
-  ]
+  "buildCommand": "bash build.sh"
 }
