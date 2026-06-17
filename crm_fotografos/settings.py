@@ -2,6 +2,9 @@ from pathlib import Path
 import os
 import sys
 
+import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -25,9 +28,23 @@ def load_local_env():
 
 load_local_env()
 
-SECRET_KEY = "dev-crm-fotografos-local"
-DEBUG = True
+SECRET_KEY = os.environ.get("SECRET_KEY", "dev-crm-fotografos-local")
+DEBUG = os.environ.get("DEBUG", "True") == "True"
+
 ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
+_extra_hosts = os.environ.get("ALLOWED_HOSTS", "")
+if _extra_hosts:
+    ALLOWED_HOSTS.extend(host.strip() for host in _extra_hosts.split(",") if host.strip())
+if os.environ.get("VERCEL") or os.environ.get("VERCEL_URL"):
+    ALLOWED_HOSTS.append(".vercel.app")
+
+CSRF_TRUSTED_ORIGINS = []
+_vercel_url = os.environ.get("VERCEL_URL")
+if _vercel_url:
+    CSRF_TRUSTED_ORIGINS.append(f"https://{_vercel_url}")
+_extra_csrf = os.environ.get("CSRF_TRUSTED_ORIGINS", "")
+if _extra_csrf:
+    CSRF_TRUSTED_ORIGINS.extend(origin.strip() for origin in _extra_csrf.split(",") if origin.strip())
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -41,6 +58,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -71,12 +89,32 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "crm_fotografos.wsgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+_database_url = os.environ.get("DATABASE_URL", "").strip()
+
+if _database_url:
+    DATABASES = {
+        "default": dj_database_url.config(
+            default=_database_url,
+            conn_max_age=0 if os.environ.get("VERCEL") else 600,
+            conn_health_checks=not bool(os.environ.get("VERCEL")),
+            ssl_require=True,
+        )
     }
-}
+elif os.environ.get("VERCEL"):
+    raise ImproperlyConfigured(
+        "DATABASE_URL nao configurada. Adicione a connection string do Supabase nas variaveis da Vercel."
+    )
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_PUBLISHABLE_KEY = os.environ.get("SUPABASE_PUBLISHABLE_KEY", "")
+SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -95,6 +133,7 @@ DATE_INPUT_FORMATS = ["%d/%m/%Y", "%Y-%m-%d"]
 
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
+STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
