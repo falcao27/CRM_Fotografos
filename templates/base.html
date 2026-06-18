@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ crm_brand_titulo }}</title>
   <link rel="icon" type="image/svg+xml" href="{% static 'crm/brand/favicon.svg' %}?v=20260601-jb-camera">
-  <link rel="stylesheet" href="{% static 'crm/styles.css' %}?v=20260614-admin-master-dashboard">
+  <link rel="stylesheet" href="{% static 'crm/styles.css' %}?v=20260618-mobile-fit">
   <script src="https://unpkg.com/lucide@latest" defer></script>
 </head>
 <body>
@@ -47,6 +47,7 @@
       <a href="{% url 'logout' %}"><i data-lucide="log-out"></i>Sair</a>
     </nav>
   </aside>
+  <button class="sidebar-backdrop" type="button" id="sidebarBackdrop" aria-label="Fechar menu" hidden></button>
 
   <main class="shell">
     <header class="topbar">
@@ -87,8 +88,39 @@
   <script>
     window.addEventListener("DOMContentLoaded", function () {
       if (window.lucide) window.lucide.createIcons();
-      document.getElementById("menuButton").addEventListener("click", function () {
-        document.getElementById("sidebar").classList.toggle("open");
+      const menuButton = document.getElementById("menuButton");
+      const sidebar = document.getElementById("sidebar");
+      const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+
+      function setMenuOpen(open) {
+        sidebar.classList.toggle("open", open);
+        document.body.classList.toggle("menu-open", open);
+        sidebarBackdrop.hidden = !open;
+        menuButton.setAttribute("aria-expanded", open ? "true" : "false");
+      }
+
+      menuButton.addEventListener("click", function () {
+        setMenuOpen(!sidebar.classList.contains("open"));
+      });
+
+      sidebarBackdrop.addEventListener("click", function () {
+        setMenuOpen(false);
+      });
+
+      sidebar.querySelectorAll("a").forEach(function (link) {
+        link.addEventListener("click", function () {
+          setMenuOpen(false);
+        });
+      });
+
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && sidebar.classList.contains("open")) {
+          setMenuOpen(false);
+        }
+      });
+
+      window.addEventListener("resize", function () {
+        if (window.innerWidth > 900) setMenuOpen(false);
       });
 
       const alertReminder = document.getElementById("alertReminder");

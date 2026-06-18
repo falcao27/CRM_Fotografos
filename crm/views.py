@@ -61,7 +61,7 @@ from .models import (
 )
 from .auth_jwt import JWT_COOKIE_NAME, JWT_MAX_AGE, gerar_token
 from .pdf import gerar_pdf_documento, gerar_pdf_relatorio_despesas, gerar_pdf_relatorio_simples, nome_pdf_documento
-from .services import EnvioDocumentoError, enviar_documento, link_whatsapp_manual, normalizar_whatsapp
+from .services import EnvioDocumentoError, enviar_documento, link_whatsapp_manual, normalizar_whatsapp, whatsapp_api_configurado
 
 
 MESES_PT = [
@@ -2313,6 +2313,9 @@ def documento_enviar(request, pk):
             "ultimo_envio_em",
         ]
     )
+    if documento.forma_envio in ["whatsapp", "ambos"] and not whatsapp_api_configurado():
+        messages.success(request, "Documento preparado. Abra o WhatsApp Web para enviar a mensagem ao cliente.")
+        return redirect("documento_whatsapp_manual", pk=documento.pk)
     messages.success(request, "Documento enviado com PDF e instrucoes para assinatura pelo gov.br.")
     return redirect("documentos")
 

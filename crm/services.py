@@ -30,7 +30,9 @@ def normalizar_whatsapp(numero):
 def enviar_documento_email(documento):
     if not documento.contato_email:
         raise EnvioDocumentoError("Documento sem e-mail do cliente.")
-    if not settings.EMAIL_HOST_USER and settings.EMAIL_BACKEND.endswith("smtp.EmailBackend"):
+    if settings.EMAIL_BACKEND.endswith("smtp.EmailBackend") and (
+        not settings.EMAIL_HOST_USER or not settings.EMAIL_HOST_PASSWORD
+    ):
         raise EnvioDocumentoError("SMTP nao configurado. Defina EMAIL_HOST_USER e EMAIL_HOST_PASSWORD.")
 
     mensagem = (
@@ -109,7 +111,8 @@ def enviar_documento_whatsapp(documento):
 
 def whatsapp_api_configurado():
     return bool(
-        getattr(settings, "WHATSAPP_ACCESS_TOKEN", "")
+        getattr(settings, "WHATSAPP_SEND_MODE", "web") == "cloud"
+        and getattr(settings, "WHATSAPP_ACCESS_TOKEN", "")
         and getattr(settings, "WHATSAPP_PHONE_NUMBER_ID", "")
     )
 
@@ -168,18 +171,13 @@ def enviar_documento(documento):
     resultados = []
     deve_enviar_email = documento.forma_envio in ["email", "ambos"]
     whatsapp_sem_api = documento.forma_envio in ["whatsapp", "ambos"] and not whatsapp_api_configurado()
-    if documento.forma_envio == "whatsapp" and whatsapp_sem_api and documento.contato_email:
-        deve_enviar_email = True
 
     if deve_enviar_email:
         resultados.append(enviar_documento_email(documento))
     if whatsapp_sem_api:
-        if not documento.contato_email:
-            raise EnvioDocumentoError(
-                "WhatsApp automatico nao configurado e o documento esta sem e-mail do cliente. "
-                "Edite o documento ou o cliente e informe o e-mail para enviar o PDF."
-            )
-        resultados.append("Aviso de WhatsApp pendente: use o botao de WhatsApp manual para abrir a mensagem pronta.")
+        if not normalizar_whatsapp(documento.contato_whatsapp):
+            raise EnvioDocumentoError("Documento sem WhatsApp do cliente.")
+        resultados.append("WhatsApp Web pendente: abra a mensagem pronta no navegador.")
     elif documento.forma_envio in ["whatsapp", "ambos"]:
         resultados.append(enviar_documento_whatsapp(documento))
     return "\n".join(resultados)

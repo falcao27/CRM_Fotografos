@@ -14,25 +14,54 @@
 
 * { box-sizing: border-box; }
 
+html {
+  width: 100%;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
   color: var(--text);
   background: var(--bg);
   font-family: Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
 }
 
 a { color: inherit; text-decoration: none; }
 
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
 .sidebar {
   position: fixed;
   inset: 0 auto 0 0;
-  z-index: 10;
+  z-index: 25;
   width: 270px;
   padding: 22px;
   background: #172321;
   color: #eef8f3;
   transform: translateX(0);
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  border: 0;
+  background: rgba(23, 35, 33, .46);
+  cursor: pointer;
+}
+
+.sidebar-backdrop[hidden] {
+  display: none;
 }
 
 .brand {
@@ -3041,7 +3070,60 @@ input[readonly] {
 }
 
 @media (max-width: 900px) {
+  body.menu-open {
+    overflow: hidden;
+  }
+
+  h1,
+  h2,
+  h3,
+  p,
+  a,
+  span,
+  strong,
+  b,
+  small,
+  dt,
+  dd {
+    overflow-wrap: anywhere;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    max-width: 100%;
+  }
+
+  .shell,
+  .shell > *,
+  .topbar > *,
+  .panel,
+  .panel > *,
+  .form-panel,
+  .form-panel > *,
+  .sale,
+  .sale > *,
+  .metric,
+  .money-card,
+  .list-row,
+  .toolbar,
+  .toolbar-actions,
+  .table-wrap,
+  .modal-panel,
+  .drawer-shell {
+    min-width: 0;
+  }
+
   .sidebar {
+    width: min(300px, 84vw);
+    max-width: 100%;
+    height: 100vh;
+    height: 100svh;
+    height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 18px max(16px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
     transform: translateX(-100%);
     transition: transform .2s ease;
   }
@@ -3050,29 +3132,64 @@ input[readonly] {
     transform: translateX(0);
   }
 
+  .sidebar-backdrop:not([hidden]) {
+    display: block;
+  }
+
+  .brand {
+    margin-bottom: 18px;
+  }
+
+  nav {
+    gap: 6px;
+  }
+
+  nav a {
+    min-height: 42px;
+    padding: 9px 10px;
+  }
+
   .shell {
     width: 100%;
     margin-left: 0;
-    padding: 16px;
+    padding: 14px max(14px, env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    overflow-x: hidden;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .topbar h1 {
+    font-size: 22px;
+    line-height: 1.15;
+  }
+
+  .topbar p {
+    font-size: 13px;
+    line-height: 1.35;
   }
 
   .icon-button {
     display: grid;
+    flex: 0 0 42px;
     place-items: center;
   }
 
   .stats-grid,
   .split,
   .alert-grid,
-    .form-grid,
-    .event-contract-layout,
-    .contract-edit-grid,
-    .contract-workspace,
-    .contract-fields.two,
-    .contract-fields.three,
-    .document-form-grid,
-    .document-form-grid-small,
-    .finance-summary,
+  .form-grid,
+  .event-contract-layout,
+  .contract-edit-grid,
+  .contract-workspace,
+  .contract-fields.two,
+  .contract-fields.three,
+  .document-form-grid,
+  .document-form-grid-small,
+  .finance-summary,
   .pipeline-report,
   .admin-kpi-grid,
   .admin-dashboard-grid,
@@ -3090,6 +3207,60 @@ input[readonly] {
     grid-column: auto;
   }
 
+  .stats-grid,
+  .split,
+  .alert-grid,
+  .finance-summary,
+  .metric-grid,
+  .dashboard-grid,
+  .admin-dashboard-grid,
+  .report-card-grid,
+  .finance-groups {
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .panel,
+  .form-panel,
+  .stat,
+  .money-card,
+  .metric,
+  .sale,
+  .client-card,
+  .finance-group-trigger,
+  .report-card {
+    padding: 14px;
+  }
+
+  .panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .panel-head .button,
+  .panel-head .icon-link {
+    width: 100%;
+  }
+
+  .month-line {
+    margin-bottom: 10px;
+    font-size: 13px;
+  }
+
+  .month-line > div {
+    flex-wrap: wrap;
+  }
+
+  .money-card {
+    display: grid;
+    min-height: 0;
+    gap: 12px;
+  }
+
+  .revenue-card {
+    padding: 14px;
+  }
+
   .toolbar,
   .sale-head,
   .row-actions {
@@ -3099,10 +3270,71 @@ input[readonly] {
 
   .money-card-values {
     grid-template-columns: 1fr;
+    gap: 12px;
   }
 
   .money-card-head {
     flex-wrap: wrap;
+  }
+
+  .money-card span {
+    margin-bottom: 8px;
+  }
+
+  .money-card strong {
+    font-size: 22px;
+  }
+
+  .metric {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    min-height: 76px;
+  }
+
+  .metric strong {
+    grid-column: 2;
+    font-size: 24px;
+  }
+
+  .list-row,
+  .timeline-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .list-row b {
+    align-self: flex-start;
+    overflow-wrap: anywhere;
+  }
+
+  .modal-backdrop {
+    align-items: center;
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+
+  .modal-panel {
+    width: 100%;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 32px);
+    max-height: calc(100svh - 32px);
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
+    padding: 22px 18px 20px;
+  }
+
+  .modal-panel h3 {
+    margin-right: 40px;
+    font-size: 20px;
+    line-height: 1.2;
+  }
+
+  .alert-reminder-panel {
+    padding-top: 26px;
+  }
+
+  .modal-close {
+    top: 10px;
+    right: 10px;
   }
 
   .search {
@@ -3121,6 +3353,16 @@ input[readonly] {
 
   .button {
     width: 100%;
+    min-width: 0;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .icon-link,
+  .icon-button,
+  .modal-close,
+  .drawer-close {
+    flex: 0 0 auto;
   }
 
   .sale-total {
@@ -3129,6 +3371,19 @@ input[readonly] {
 
   .finance-drawer {
     width: 100%;
+    max-width: 100vw;
+  }
+
+  .finance-drawer,
+  .agenda-detail-drawer {
+    height: 100vh;
+    height: 100svh;
+    height: 100dvh;
+  }
+
+  .drawer-shell,
+  .agenda-detail-shell {
+    padding: 22px max(16px, env(safe-area-inset-right)) calc(22px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   }
 
   .drawer-summary {
@@ -3138,11 +3393,6 @@ input[readonly] {
 
   .detail-list {
     grid-template-columns: 1fr;
-  }
-
-  .timeline-item {
-    align-items: stretch;
-    flex-direction: column;
   }
 
   .calendar-sidebar {
@@ -3167,7 +3417,7 @@ input[readonly] {
   .week-days-header,
   .all-day-row,
   .time-grid {
-    min-width: 820px;
+    min-width: 720px;
   }
 
   .billing-group-head,
@@ -3224,5 +3474,138 @@ input[readonly] {
     align-items: stretch;
     grid-template-columns: 1fr;
     flex-direction: column;
+  }
+
+  .report-card,
+  .finance-group-trigger {
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 132px;
+    gap: 10px;
+  }
+
+  .report-card strong,
+  .finance-group-trigger strong {
+    font-size: clamp(30px, 10vw, 42px);
+  }
+
+  .report-card-form,
+  .access-filter > div {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-summary-values {
+    justify-content: flex-start;
+  }
+
+  .actions {
+    white-space: normal;
+  }
+
+  .table-wrap {
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 480px) {
+  .shell {
+    padding-top: 12px;
+  }
+
+  .topbar h1 {
+    font-size: 20px;
+  }
+
+  .topbar p {
+    display: none;
+  }
+
+  .panel,
+  .form-panel,
+  .stat,
+  .money-card,
+  .metric,
+  .sale,
+  .client-card,
+  .finance-group-trigger,
+  .report-card {
+    padding: 12px;
+  }
+
+  .money-card strong,
+  .metric strong {
+    font-size: clamp(20px, 7vw, 24px);
+  }
+
+  .metric {
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .metric i {
+    width: 18px;
+    height: 18px;
+  }
+
+  .metric span {
+    font-size: 12px;
+  }
+
+  .revenue-filter {
+    width: 100%;
+  }
+
+  .revenue-filter a {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .modal-panel {
+    max-width: calc(100vw - 24px);
+    padding: 20px 14px 16px;
+  }
+
+  .alert-reminder-icon {
+    width: 52px;
+    height: 52px;
+  }
+
+  .week-days-header,
+  .all-day-row,
+  .time-grid {
+    min-width: 640px;
+  }
+}
+
+@media (max-width: 360px) {
+  .sidebar {
+    width: min(288px, 88vw);
+  }
+
+  .shell {
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
+  }
+
+  .topbar {
+    gap: 8px;
+  }
+
+  .icon-button {
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+  }
+
+  .panel,
+  .form-panel,
+  .stat,
+  .money-card,
+  .metric,
+  .sale,
+  .client-card,
+  .finance-group-trigger,
+  .report-card {
+    padding: 10px;
   }
 }
