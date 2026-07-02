@@ -648,7 +648,7 @@ class EventoForm(forms.ModelForm):
 class TarefaForm(forms.ModelForm):
     class Meta:
         model = Tarefa
-        fields = ["cliente", "titulo", "tipo", "data", "hora", "status", "descricao"]
+        fields = ["cliente", "evento", "titulo", "tipo", "data", "hora", "status", "descricao"]
         widgets = {
             "data": DateInput(),
             "hora": forms.TimeInput(attrs={"type": "time"}),

@@ -282,6 +282,62 @@ class DespesasTests(TestCase):
         self.assertEqual(grupos[0]["titulo"], "Junho 2026")
         self.assertEqual(grupos[0]["total_valor"], Decimal("150.00"))
 
+    def test_despesas_filtra_apenas_pagas(self):
+        Despesa.objects.create(descricao="Paga", categoria="Fixo", valor="500.00", data="2026-05-05", status="pago")
+        Despesa.objects.create(descricao="Pendente", categoria="Fixo", valor="300.00", data="2026-05-06")
+
+        response = self.client.get(reverse("despesas"), {"status": "pago"})
+
+        grupos = response.context["grupos_despesas"]
+        despesas = [despesa for grupo in grupos for despesa in grupo["despesas"]]
+        self.assertEqual([despesa.descricao for despesa in despesas], ["Paga"])
+        self.assertContains(response, 'option value="pago" selected')
+
+    def test_despesas_filtra_por_categoria(self):
+        Despesa.objects.create(descricao="Aluguel", categoria="Fixo", valor="500.00", data="2026-05-05")
+        Despesa.objects.create(descricao="Album", categoria="Produto", valor="300.00", data="2026-05-06")
+
+        response = self.client.get(reverse("despesas"), {"categoria": "Produto"})
+
+        grupos = response.context["grupos_despesas"]
+        despesas = [despesa for grupo in grupos for despesa in grupo["despesas"]]
+        self.assertEqual([despesa.descricao for despesa in despesas], ["Album"])
+        self.assertContains(response, "Todas as categorias")
+        self.assertContains(response, 'option value="Produto" selected')
+        self.assertContains(response, "?categoria=Produto")
+
+    def test_relatorio_pdf_despesas_filtra_categoria_e_pagas(self):
+        Despesa.objects.create(
+            descricao="Video pago",
+            categoria="Video",
+            valor="150.00",
+            data="2026-06-10",
+            status="pago",
+        )
+        Despesa.objects.create(
+            descricao="Video pendente",
+            categoria="Video",
+            valor="180.00",
+            data="2026-06-11",
+        )
+        Despesa.objects.create(
+            descricao="Produto pago",
+            categoria="Produto",
+            valor="300.00",
+            data="2026-06-12",
+            status="pago",
+        )
+
+        response = self.client.get(
+            reverse("despesas_relatorio_pdf", args=[2026, 6]),
+            {"status": "pago", "categoria": "Video"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Video pago", response.content)
+        self.assertNotIn(b"Video pendente", response.content)
+        self.assertNotIn(b"Produto pago", response.content)
+
     def test_relatorio_pdf_despesas_mes(self):
         Despesa.objects.create(descricao="Aluguel", categoria="Fixo", valor="500.00", data="2026-05-05")
 

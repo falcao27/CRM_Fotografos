@@ -1243,10 +1243,20 @@ def tarefa_marcar_concluida(request, pk):
 
 
 def despesas(request):
-    status = request.GET.get("status", "")
-    despesas_qs = filtrar_empresa(Despesa.objects.all(), request).order_by("vencimento", "data", "descricao")
+    status = "pago" if request.GET.get("status") == "pago" else ""
+    categoria = request.GET.get("categoria", "").strip()
+    despesas_base = filtrar_empresa(Despesa.objects.all(), request)
+    categorias = (
+        despesas_base.exclude(categoria="")
+        .order_by("categoria")
+        .values_list("categoria", flat=True)
+        .distinct()
+    )
+    despesas_qs = despesas_base.order_by("vencimento", "data", "descricao")
     if status:
         despesas_qs = despesas_qs.filter(status=status)
+    if categoria:
+        despesas_qs = despesas_qs.filter(categoria=categoria)
 
     grupos_por_mes = {}
     for despesa in despesas_qs:
@@ -1279,12 +1289,21 @@ def despesas(request):
     return render(
         request,
         "crm/despesas.html",
-        {"grupos_despesas": grupos_despesas, "status": status},
+        {
+            "grupos_despesas": grupos_despesas,
+            "status": status,
+            "categoria": categoria,
+            "categorias": categorias,
+            "filter_query": urlencode(
+                {chave: valor for chave, valor in {"status": status, "categoria": categoria}.items() if valor}
+            ),
+        },
     )
 
 
 def despesas_relatorio_pdf(request, ano, mes):
-    status = request.GET.get("status", "")
+    status = "pago" if request.GET.get("status") == "pago" else ""
+    categoria = request.GET.get("categoria", "").strip()
     inicio = date(ano, mes, 1)
     fim = inicio.replace(day=monthrange(ano, mes)[1])
     despesas_qs = (
@@ -1293,11 +1312,15 @@ def despesas_relatorio_pdf(request, ano, mes):
     )
     if status:
         despesas_qs = despesas_qs.filter(status=status)
+    if categoria:
+        despesas_qs = despesas_qs.filter(categoria=categoria)
     despesas_lista = list(despesas_qs)
     total = sum((despesa.valor for despesa in despesas_lista), Decimal("0.00"))
     titulo = f"Relatorio de despesas - {MESES_PT[mes - 1]} {ano}"
     if status:
         titulo += f" - {dict(Despesa.STATUS_CHOICES).get(status, status)}"
+    if categoria:
+        titulo += f" - {categoria}"
     response = HttpResponse(
         gerar_pdf_relatorio_despesas(titulo, despesas_lista, total),
         content_type="application/pdf",
@@ -1379,10 +1402,8 @@ def pipeline(request):
 
 def oportunidade_form(request, pk=None):
     oportunidade = get_object_or_404(filtrar_empresa(Oportunidade.objects, request), pk=pk) if pk else None
-    form = OportunidadeForm(request.POST or None, instance=oportunidade)
     empresa = empresa_atual(request)
-    if empresa:
-        form.fields["cliente"].queryset = Cliente.objects.filter(empresa=empresa)
+    form = OportunidadeForm(request.POST or None, instance=oportunidade, empresa=empresa)
     if request.method == "POST" and form.is_valid():
         oportunidade = form.save(commit=False)
         atribuir_empresa(oportunidade, request)

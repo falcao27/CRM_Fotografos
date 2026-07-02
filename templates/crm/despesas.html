@@ -8,10 +8,14 @@
 <section class="toolbar">
   <form class="search" method="get">
     <select name="status">
-      <option value="">Todos os status</option>
-      <option value="pendente" {% if status == "pendente" %}selected{% endif %}>Pendente</option>
+      <option value="">Todas as despesas</option>
       <option value="pago" {% if status == "pago" %}selected{% endif %}>Pago</option>
-      <option value="atrasado" {% if status == "atrasado" %}selected{% endif %}>Atrasado</option>
+    </select>
+    <select name="categoria">
+      <option value="">Todas as categorias</option>
+      {% for item in categorias %}
+        <option value="{{ item }}" {% if categoria == item %}selected{% endif %}>{{ item }}</option>
+      {% endfor %}
     </select>
     <button class="button ghost" type="submit"><i data-lucide="filter"></i>Filtrar</button>
   </form>
@@ -20,7 +24,7 @@
       {% with grupo=grupos_despesas.0 %}
         <a
           class="button ghost"
-          href="{% url 'despesas_relatorio_pdf' grupo.chave.year grupo.chave.month %}{% if status %}?status={{ status }}{% endif %}"
+          href="{% url 'despesas_relatorio_pdf' grupo.chave.year grupo.chave.month %}{% if filter_query %}?{{ filter_query }}{% endif %}"
           target="_blank"
           rel="noopener"
           data-expense-report-link
@@ -39,7 +43,7 @@
       class="panel finance-group-trigger"
       type="button"
       data-expense-target="despesasMes{{ forloop.counter }}"
-      data-expense-report-url="{% url 'despesas_relatorio_pdf' grupo.chave.year grupo.chave.month %}{% if status %}?status={{ status }}{% endif %}"
+      data-expense-report-url="{% url 'despesas_relatorio_pdf' grupo.chave.year grupo.chave.month %}{% if filter_query %}?{{ filter_query }}{% endif %}"
     >
       <span>{{ grupo.titulo }}</span>
       <small>{{ grupo.descricao }} Total: {{ grupo.total_valor|brl }}</small>
