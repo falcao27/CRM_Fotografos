@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -220,6 +220,43 @@ class EventoDocumentoFlowTests(TestCase):
         self.assertEqual(pdf_response.status_code, 200)
         self.assertIn(b"Clausula especial editada.", pdf_response.content)
 
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", DEFAULT_FROM_EMAIL="crm@localhost")
+    def test_envio_documento_por_email_mantem_assinatura_gov(self):
+        cliente = Cliente.objects.create(nome="Cliente Email", email="cliente@example.com")
+        documento = Documento.objects.create(
+            cliente=cliente,
+            titulo="Contrato Email",
+            status="pendente",
+            contato_email=cliente.email,
+            contato_whatsapp="85999990000",
+        )
+
+        response = self.client.post(reverse("documento_enviar", args=[documento.pk]), {"canal": "email"})
+
+        documento.refresh_from_db()
+        self.assertRedirects(response, reverse("documentos"))
+        self.assertEqual(documento.status, "enviado")
+        self.assertEqual(documento.forma_envio, "email")
+        self.assertTrue(documento.ultimo_envio_sucesso)
+
+    def test_envio_documento_por_whatsapp_web_prepara_pdf_e_conversa(self):
+        cliente = Cliente.objects.create(nome="Cliente WhatsApp", telefone="85999990000")
+        documento = Documento.objects.create(
+            cliente=cliente,
+            titulo="Contrato WhatsApp",
+            status="pendente",
+            contato_whatsapp=cliente.telefone,
+            contato_email="cliente@example.com",
+        )
+
+        response = self.client.post(reverse("documento_enviar", args=[documento.pk]), {"canal": "whatsapp_web"})
+
+        documento.refresh_from_db()
+        self.assertRedirects(response, reverse("documento_whatsapp_manual", args=[documento.pk]))
+        self.assertEqual(documento.status, "enviado")
+        self.assertEqual(documento.forma_envio, "whatsapp")
+        self.assertIn("PDF real", documento.ultimo_envio_retorno)
+
 
 class ClientePlanilhaTests(TestCase):
     def test_planilha_exportada_nao_pede_proxima_oportunidade(self):
@@ -253,6 +290,47 @@ class AgendaTests(TestCase):
 
         self.assertContains(response, "mini-day-marker tone-trabalho")
         self.assertContains(response, "mini-day-marker tone-reuniao")
+
+    def test_evento_cria_trabalho_na_agenda_com_empresa(self):
+        empresa = Empresa.objects.create(nome="Empresa Agenda")
+        cliente = Cliente.objects.create(nome="Cliente Agenda", empresa=empresa)
+
+        evento = Evento.objects.create(
+            empresa=empresa,
+            cliente=cliente,
+            nome=cliente.nome,
+            tipo_evento="aniversario",
+            data_festa="2026-08-20",
+            horario="16:00",
+        )
+
+        tarefa = Tarefa.objects.get(evento=evento)
+        self.assertEqual(tarefa.empresa, empresa)
+        self.assertEqual(tarefa.cliente, cliente)
+        self.assertEqual(tarefa.tipo, "trabalho")
+        self.assertEqual(tarefa.data.isoformat(), "2026-08-20")
+
+    def test_tarefa_pode_usar_nome_avulso_sem_cliente(self):
+        response = self.client.post(
+            reverse("tarefa_nova"),
+            {
+                "cliente": "",
+                "nome_contato": "Reuniao com decoradora",
+                "evento": "",
+                "titulo": "Alinhamento do evento",
+                "tipo": "reuniao",
+                "data": "2026-07-15",
+                "hora": "10:30",
+                "status": "pendente",
+                "descricao": "Visita tecnica fora do cadastro.",
+            },
+        )
+
+        tarefa = Tarefa.objects.get(titulo="Alinhamento do evento")
+        self.assertRedirects(response, reverse("agenda"))
+        self.assertIsNone(tarefa.cliente)
+        self.assertEqual(tarefa.nome_contato, "Reuniao com decoradora")
+        self.assertFalse(Cliente.objects.filter(nome="Reuniao com decoradora").exists())
 
 
 class DespesasTests(TestCase):

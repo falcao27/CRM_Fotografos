@@ -27,7 +27,9 @@ def sincronizar_evento_com_agenda(sender, instance, **kwargs):
     Tarefa.objects.update_or_create(
         evento=instance,
         defaults={
+            "empresa": instance.empresa,
             "cliente": instance.cliente,
+            "nome_contato": "" if instance.cliente_id else instance.nome,
             "titulo": titulo_trabalho_evento(instance),
             "tipo": "trabalho",
             "data": instance.data_festa,

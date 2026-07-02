@@ -546,6 +546,7 @@ class Tarefa(models.Model):
 
     empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, null=True, blank=True, related_name="tarefas")
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, related_name="tarefas")
+    nome_contato = models.CharField(max_length=160, blank=True)
     evento = models.OneToOneField(
         "Evento",
         on_delete=models.CASCADE,

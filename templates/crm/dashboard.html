@@ -86,7 +86,7 @@
       {% for tarefa in tarefas_semana %}
         <div class="timeline-item {{ tarefa.tipo }}">
           <strong>{{ tarefa.titulo }}</strong>
-          <small>{{ tarefa.data|date:"d/m" }}{% if tarefa.hora %} - {{ tarefa.hora|time:"H:i" }}{% endif %}{% if tarefa.cliente %} - {{ tarefa.cliente.nome }}{% endif %}</small>
+          <small>{{ tarefa.data|date:"d/m" }}{% if tarefa.hora %} - {{ tarefa.hora|time:"H:i" }}{% endif %}{% if tarefa.cliente %} - {{ tarefa.cliente.nome }}{% elif tarefa.nome_contato %} - {{ tarefa.nome_contato }}{% endif %}</small>
         </div>
       {% empty %}
         <p class="empty">Nenhum compromisso nos proximos dias.</p>

@@ -129,7 +129,10 @@
                   data-detail-target="{{ item.detalhe_id }}"
                 >
                   <strong>{{ item.tarefa.titulo }}</strong>
-                  <small>{% if item.tarefa.hora %}{{ item.tarefa.hora|time:"H:i" }}{% endif %}{% if item.tarefa.cliente %} - {{ item.tarefa.cliente.nome }}{% endif %}</small>
+                  <small>
+                    {% if item.tarefa.hora %}{{ item.tarefa.hora|time:"H:i" }}{% endif %}
+                    {% if item.tarefa.cliente %} - {{ item.tarefa.cliente.nome }}{% elif item.tarefa.nome_contato %} - {{ item.tarefa.nome_contato }}{% endif %}
+                  </small>
                 </button>
               {% endfor %}
             </div>
@@ -170,7 +173,7 @@
           </div>
         {% else %}
           <dl class="detail-list">
-            <div><dt>Cliente</dt><dd>{% if tarefa.cliente %}{{ tarefa.cliente.nome }}{% else %}-{% endif %}</dd></div>
+            <div><dt>Cliente / nome</dt><dd>{% if tarefa.cliente %}{{ tarefa.cliente.nome }}{% elif tarefa.nome_contato %}{{ tarefa.nome_contato }}{% else %}-{% endif %}</dd></div>
             <div><dt>Tipo</dt><dd>{{ tarefa.get_tipo_display }}</dd></div>
             <div class="wide"><dt>Descricao</dt><dd>{{ tarefa.descricao|default:"-" }}</dd></div>
           </dl>

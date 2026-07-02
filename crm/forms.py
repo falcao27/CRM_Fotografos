@@ -648,12 +648,40 @@ class EventoForm(forms.ModelForm):
 class TarefaForm(forms.ModelForm):
     class Meta:
         model = Tarefa
-        fields = ["cliente", "evento", "titulo", "tipo", "data", "hora", "status", "descricao"]
+        fields = ["cliente", "nome_contato", "evento", "titulo", "tipo", "data", "hora", "status", "descricao"]
+        labels = {
+            "nome_contato": "Nome avulso",
+        }
         widgets = {
             "data": DateInput(),
             "hora": forms.TimeInput(attrs={"type": "time"}),
             "descricao": forms.Textarea(attrs={"rows": 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["cliente"].required = False
+        self.fields["evento"].required = False
+        self.fields["nome_contato"].required = False
+        self.fields["nome_contato"].help_text = "Use para visitas, reunioes ou compromissos com pessoas fora do cadastro."
+        self.fields["nome_contato"].widget.attrs.update(
+            {
+                "placeholder": "Ex: Visita tecnica, fornecedor, reuniao externa",
+                "autocomplete": "off",
+            }
+        )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        cliente = cleaned_data.get("cliente")
+        evento = cleaned_data.get("evento")
+        nome_contato = (cleaned_data.get("nome_contato") or "").strip()
+        if evento:
+            cleaned_data["cliente"] = evento.cliente
+            cleaned_data["nome_contato"] = ""
+        elif not cliente and not nome_contato:
+            self.add_error("nome_contato", "Informe um cliente cadastrado ou um nome avulso.")
+        return cleaned_data
 
 
 class DocumentoForm(forms.ModelForm):

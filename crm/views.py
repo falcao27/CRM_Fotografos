@@ -61,7 +61,7 @@ from .models import (
 )
 from .auth_jwt import JWT_COOKIE_NAME, JWT_MAX_AGE, gerar_token
 from .pdf import gerar_pdf_documento, gerar_pdf_relatorio_despesas, gerar_pdf_relatorio_simples, nome_pdf_documento
-from .services import EnvioDocumentoError, enviar_documento, link_whatsapp_manual, normalizar_whatsapp, whatsapp_api_configurado
+from .services import EnvioDocumentoError, enviar_documento, link_whatsapp_manual, normalizar_whatsapp
 
 
 MESES_PT = [
@@ -2308,13 +2308,67 @@ def documento_enviar(request, pk):
         if not documento.contato_email:
             documento.contato_email = documento.cliente.email
 
+    canal = request.POST.get("canal", "").strip()
+    if canal not in ["email", "whatsapp_web"]:
+        messages.warning(request, "Escolha se deseja enviar por e-mail ou WhatsApp Web.")
+        return redirect("documentos")
+
+    if canal == "whatsapp_web":
+        documento.forma_envio = "whatsapp"
+        if not normalizar_whatsapp(documento.contato_whatsapp):
+            exc = EnvioDocumentoError("Documento sem WhatsApp do cliente.")
+            documento.ultimo_envio_sucesso = False
+            documento.ultimo_envio_retorno = str(exc)
+            documento.ultimo_envio_em = timezone.now()
+            documento.save(
+                update_fields=[
+                    "contato_whatsapp",
+                    "contato_email",
+                    "forma_envio",
+                    "ultimo_envio_sucesso",
+                    "ultimo_envio_retorno",
+                    "ultimo_envio_em",
+                ]
+            )
+            messages.error(request, f"Documento nao enviado: {exc}")
+            return redirect("documentos")
+        documento.status = "enviado"
+        documento.enviado_em = timezone.localdate()
+        documento.ultimo_envio_sucesso = True
+        documento.ultimo_envio_retorno = "WhatsApp Web preparado com PDF real para envio manual."
+        documento.ultimo_envio_em = timezone.now()
+        documento.save(
+            update_fields=[
+                "contato_whatsapp",
+                "contato_email",
+                "forma_envio",
+                "status",
+                "enviado_em",
+                "ultimo_envio_sucesso",
+                "ultimo_envio_retorno",
+                "ultimo_envio_em",
+            ]
+        )
+        messages.success(request, "PDF preparado. Abra o WhatsApp Web e anexe o contrato ao cliente.")
+        return redirect("documento_whatsapp_manual", pk=documento.pk)
+
+    documento.forma_envio = "email"
     try:
         retorno = enviar_documento(documento)
     except EnvioDocumentoError as exc:
         documento.ultimo_envio_sucesso = False
         documento.ultimo_envio_retorno = str(exc)
         documento.ultimo_envio_em = timezone.now()
-        documento.save(update_fields=["contato_whatsapp", "contato_email", "ultimo_envio_sucesso", "ultimo_envio_retorno", "ultimo_envio_em"])
+        documento.save(
+            update_fields=[
+                "contato_whatsapp",
+                "contato_email",
+                "forma_envio",
+                "ultimo_envio_sucesso",
+                "ultimo_envio_retorno",
+                "ultimo_envio_em",
+            ]
+        )
         messages.error(request, f"Documento nao enviado: {exc}")
         return redirect("documentos")
 
@@ -2327,6 +2381,7 @@ def documento_enviar(request, pk):
         update_fields=[
             "contato_whatsapp",
             "contato_email",
+            "forma_envio",
             "status",
             "enviado_em",
             "ultimo_envio_sucesso",
@@ -2334,9 +2389,6 @@ def documento_enviar(request, pk):
             "ultimo_envio_em",
         ]
     )
-    if documento.forma_envio in ["whatsapp", "ambos"] and not whatsapp_api_configurado():
-        messages.success(request, "Documento preparado. Abra o WhatsApp Web para enviar a mensagem ao cliente.")
-        return redirect("documento_whatsapp_manual", pk=documento.pk)
     messages.success(request, "Documento enviado com PDF e instrucoes para assinatura pelo gov.br.")
     return redirect("documentos")
 

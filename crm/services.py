@@ -186,10 +186,10 @@ def enviar_documento(documento):
 def mensagem_documento_whatsapp(documento):
     return (
         f"Ola, {documento.cliente.nome if documento.cliente else ''}.\n\n"
-        "Te enviei o contrato no e-mail com o PDF anexado.\n\n"
-        "Para assinar digitalmente, acesse o Assinador gov.br:\n"
+        "Segue o contrato em PDF para conferencia.\n\n"
+        "Para assinar digitalmente, baixe o PDF e acesse o Assinador gov.br:\n"
         f"{GOVBR_ASSINADOR_URL}\n\n"
-        "Depois de assinar, responda o e-mail ou me envie o PDF assinado por aqui."
+        "Depois de assinar, me envie o PDF assinado por aqui."
     )
 
 

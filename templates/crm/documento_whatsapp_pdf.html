@@ -1,15 +1,16 @@
 {% extends "base.html" %}
 
 {% block page_title %}Enviar contrato pelo WhatsApp{% endblock %}
-{% block page_subtitle %}Use como aviso rapido depois que o contrato for enviado por e-mail.{% endblock %}
+{% block page_subtitle %}Abra o PDF real e envie pela conversa do cliente no WhatsApp Web.{% endblock %}
 
 {% block content %}
 <section class="form-panel narrow">
   <h2>{{ documento.titulo }}</h2>
   <p class="empty">
-    Abra a conversa do cliente e envie a mensagem pronta informando que o contrato foi enviado por e-mail com o link do Assinador gov.br.
+    Abra o PDF do contrato, anexe o arquivo na conversa do cliente e envie a mensagem pronta com a orientacao de assinatura pelo gov.br.
   </p>
   <div class="row-actions">
+    <a class="button ghost" href="{% url 'documento_pdf' documento.pk %}?download=1" target="_blank" rel="noopener"><i data-lucide="file-down"></i>Baixar PDF</a>
     <a class="button" href="{{ whatsapp_url }}" target="_blank" rel="noopener"><i data-lucide="message-circle"></i>Abrir WhatsApp</a>
     {% if documento.arquivo_assinado %}
       <a class="button ghost" href="{{ documento.arquivo_assinado.url }}" target="_blank" rel="noopener"><i data-lucide="badge-check"></i>Visualizar contrato assinado</a>

@@ -94,6 +94,8 @@
                 {% if tarefa.evento.local_evento %}<span>Local: {{ tarefa.evento.local_evento }}</span>{% endif %}
               {% elif tarefa.cliente %}
                 <span>Cliente: {{ tarefa.cliente.nome }}</span>
+              {% elif tarefa.nome_contato %}
+                <span>Nome: {{ tarefa.nome_contato }}</span>
               {% else %}
                 {% for linha in tarefa.descricao.splitlines %}
                   {% if linha %}<span>{{ linha }}</span>{% endif %}
@@ -126,7 +128,7 @@
               <p><strong>Buffet:</strong> {% if tarefa.evento.em_buffet %}Sim{% else %}Nao{% endif %}</p>
               <p><strong>Contato:</strong> {{ tarefa.evento.contato|default:"-" }}</p>
             {% else %}
-              <p><strong>Cliente:</strong> {% if tarefa.cliente %}{{ tarefa.cliente.nome }}{% else %}-{% endif %}</p>
+              <p><strong>Cliente / nome:</strong> {% if tarefa.cliente %}{{ tarefa.cliente.nome }}{% elif tarefa.nome_contato %}{{ tarefa.nome_contato }}{% else %}-{% endif %}</p>
               <p><strong>Descricao:</strong> {{ tarefa.descricao|linebreaksbr|default:"-" }}</p>
             {% endif %}
           </div>
