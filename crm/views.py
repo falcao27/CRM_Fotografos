@@ -176,6 +176,97 @@ def atualizar_status_venda(venda):
             evento.save(update_fields=["pagamento_recebido", "atualizado_em"])
 
 
+def aplicar_recebimento_parcela(parcela, valor_baixa, data_pagamento):
+    if valor_baixa <= Decimal("0.00"):
+        return
+
+    parcelas = list(parcela.venda.parcelas.order_by("vencimento", "numero", "id"))
+    indice_atual = next((indice for indice, item in enumerate(parcelas) if item.pk == parcela.pk), 0)
+    parcelas_alvo = [parcelas[indice_atual], *parcelas[indice_atual + 1 :]]
+    restante = valor_baixa
+
+    for parcela_alvo in parcelas_alvo:
+        if restante <= Decimal("0.00"):
+            break
+        valor_em_aberto = parcela_alvo.valor_em_aberto
+        if valor_em_aberto <= Decimal("0.00"):
+            continue
+        valor_aplicado = min(restante, valor_em_aberto)
+        parcela_alvo.valor_recebido = (parcela_alvo.valor_recebido or Decimal("0.00")) + valor_aplicado
+        parcela_alvo.data_pagamento = data_pagamento
+        parcela_alvo.status = "pago" if parcela_alvo.valor_recebido >= parcela_alvo.valor else "parcial"
+        parcela_alvo.save(update_fields=["valor_recebido", "status", "data_pagamento"])
+        restante -= valor_aplicado
+
+    if restante > Decimal("0.00"):
+        parcela.valor_recebido = (parcela.valor_recebido or Decimal("0.00")) + restante
+        parcela.data_pagamento = data_pagamento
+        parcela.status = "pago" if parcela.valor_recebido >= parcela.valor else "parcial"
+        parcela.save(update_fields=["valor_recebido", "status", "data_pagamento"])
+
+
+def diluir_saldo_venda(venda, parcela_referencia, total_parcelas=None):
+    parcelas = list(venda.parcelas.order_by("numero", "vencimento", "id"))
+    if not parcelas:
+        return
+
+    total_parcelas = max(total_parcelas or venda.quantidade_parcelas, len(parcelas))
+    ultimo_vencimento = max((parcela.vencimento for parcela in parcelas), default=timezone.localdate())
+    ultimo_numero = max((parcela.numero for parcela in parcelas), default=0)
+    while len(parcelas) < total_parcelas:
+        ultimo_numero += 1
+        ultimo_vencimento = add_months(ultimo_vencimento, 1)
+        nova_parcela = Parcela.objects.create(
+            venda=venda,
+            numero=ultimo_numero,
+            valor=Decimal("0.00"),
+            valor_recebido=Decimal("0.00"),
+            vencimento=ultimo_vencimento,
+            lembrete_em=ultimo_vencimento - timedelta(days=3),
+            status="pendente",
+        )
+        parcelas.append(nova_parcela)
+
+    parcela_referencia.refresh_from_db()
+    if parcela_referencia.valor_recebido_efetivo > 0 and parcela_referencia.valor_em_aberto > 0:
+        parcela_referencia.valor = parcela_referencia.valor_recebido_efetivo
+        parcela_referencia.status = "pago"
+        if not parcela_referencia.data_pagamento:
+            parcela_referencia.data_pagamento = timezone.localdate()
+        parcela_referencia.save(update_fields=["valor", "status", "data_pagamento"])
+
+    venda.refresh_from_db()
+    saldo_aberto = venda.valor_pendente
+    parcelas_abertas = list(venda.parcelas.exclude(status="pago").order_by("numero", "vencimento", "id"))
+    if not parcelas_abertas:
+        atualizar_status_venda(venda)
+        return
+
+    valor_base = (saldo_aberto / len(parcelas_abertas)).quantize(Decimal("0.01"))
+    restante = saldo_aberto
+    for indice, parcela in enumerate(parcelas_abertas):
+        valor_aberto = valor_base if indice < len(parcelas_abertas) - 1 else restante
+        parcela.valor = parcela.valor_recebido_efetivo + valor_aberto
+        if parcela.valor_recebido_efetivo >= parcela.valor and parcela.valor:
+            parcela.status = "pago"
+            if not parcela.data_pagamento:
+                parcela.data_pagamento = timezone.localdate()
+        elif parcela.valor_recebido_efetivo > 0:
+            parcela.status = "parcial"
+            if not parcela.data_pagamento:
+                parcela.data_pagamento = timezone.localdate()
+        else:
+            parcela.status = "pendente"
+            parcela.data_pagamento = None
+        parcela.save(update_fields=["valor", "status", "data_pagamento"])
+        restante -= valor_aberto
+
+    venda.quantidade_parcelas = venda.parcelas.count()
+    venda.condicao_pagamento = "parcelado" if venda.quantidade_parcelas > 1 else "avista"
+    venda.save(update_fields=["quantidade_parcelas", "condicao_pagamento", "atualizado_em"])
+    atualizar_status_venda(venda)
+
+
 def formatar_data_planilha(valor):
     return valor.strftime("%d/%m/%Y") if valor else ""
 
@@ -1154,10 +1245,14 @@ def parcela_form(request, pk=None, venda_id=None):
     venda = get_object_or_404(filtrar_empresa(Venda.objects, request), pk=venda_id) if venda_id else parcela.venda
     form = ParcelaForm(request.POST or None, instance=parcela)
     if request.method == "POST" and form.is_valid():
-        parcela = form.save(commit=False)
-        parcela.venda = venda
-        parcela.save()
-        atualizar_status_venda(venda)
+        with transaction.atomic():
+            parcela = form.save(commit=False)
+            parcela.venda = venda
+            parcela.save()
+            if form.cleaned_data.get("diluir_saldo"):
+                diluir_saldo_venda(venda, parcela, form.cleaned_data.get("total_parcelas_diluicao"))
+            else:
+                atualizar_status_venda(venda)
         messages.success(request, "Parcela salva com sucesso.")
         return redirect("financeiro")
     return render(request, "crm/form.html", {"form": form, "titulo": f"Parcela - {venda}", "voltar": "financeiro"})
@@ -1717,13 +1812,10 @@ def parcela_marcar_pago(request, pk):
         valor_baixa = decimal_brasileiro(request.POST.get("valor_recebido"))
         if valor_baixa is None:
             valor_baixa = parcela.valor_em_aberto or parcela.valor
-        parcela.valor_recebido = (parcela.valor_recebido or Decimal("0.00")) + valor_baixa
-        parcela.data_pagamento = hoje
-        parcela.status = "pago" if parcela.valor_recebido >= parcela.valor else "parcial"
-        parcela.save(update_fields=["valor_recebido", "status", "data_pagamento"])
-
-        venda = parcela.venda
-        atualizar_status_venda(venda)
+        with transaction.atomic():
+            aplicar_recebimento_parcela(parcela, valor_baixa, hoje)
+            venda = parcela.venda
+            atualizar_status_venda(venda)
 
         messages.success(request, "Recebimento registrado no financeiro.")
     return redirect(request.POST.get("next") or "cobrancas")

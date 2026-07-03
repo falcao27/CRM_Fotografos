@@ -208,16 +208,46 @@ class ParcelaForm(forms.ModelForm):
         required=False,
         widget=forms.TextInput(attrs={"inputmode": "decimal", "placeholder": "0,00"}),
     )
+    diluir_saldo = forms.BooleanField(
+        label="Diluir saldo restante nas proximas parcelas",
+        required=False,
+        help_text="Use quando o cliente pagou menos e o restante deve ser dividido nas parcelas futuras.",
+    )
+    total_parcelas_diluicao = forms.IntegerField(
+        label="Total de parcelas apos diluir",
+        required=False,
+        min_value=1,
+        max_value=60,
+        help_text="Informe um total maior para criar novas parcelas e espalhar o saldo.",
+        widget=forms.NumberInput(attrs={"min": 1, "max": 60}),
+    )
 
     class Meta:
         model = Parcela
-        fields = ["numero", "valor", "valor_recebido", "vencimento", "data_pagamento", "status", "lembrete_em", "observacoes"]
+        fields = [
+            "numero",
+            "valor",
+            "valor_recebido",
+            "diluir_saldo",
+            "total_parcelas_diluicao",
+            "vencimento",
+            "data_pagamento",
+            "status",
+            "lembrete_em",
+            "observacoes",
+        ]
         widgets = {
             "vencimento": DateInput(),
             "data_pagamento": DateInput(),
             "lembrete_em": DateInput(),
             "observacoes": forms.Textarea(attrs={"rows": 2}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        venda = getattr(self.instance, "venda", None)
+        if venda:
+            self.fields["total_parcelas_diluicao"].initial = venda.quantidade_parcelas
 
     def clean(self):
         cleaned_data = super().clean()

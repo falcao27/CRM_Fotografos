@@ -629,6 +629,129 @@ class FinanceiroReceitasTests(TestCase):
         self.assertEqual(parcela.valor_em_aberto, Decimal("50.00"))
         self.assertEqual(venda.status, "pendente")
 
+    def test_recebimento_maior_abate_proximas_parcelas_da_venda(self):
+        cliente = Cliente.objects.create(nome="Cliente Excedente", telefone="85999990000")
+        venda = Venda.objects.create(
+            cliente=cliente,
+            titulo="Aniversario",
+            valor_total="1750.00",
+            status="pendente",
+            forma_pagamento="pix",
+            condicao_pagamento="parcelado",
+            quantidade_parcelas=2,
+        )
+        Evento.objects.create(
+            cliente=cliente,
+            venda=venda,
+            nome="Cliente Excedente",
+            tipo_evento="aniversario",
+            valor_cobrado="1750.00",
+            forma_pagamento="pix",
+            quantidade_parcelas=2,
+        )
+        primeira = Parcela.objects.create(
+            venda=venda,
+            numero=1,
+            valor="875.00",
+            vencimento="2026-07-01",
+            status="pendente",
+        )
+        segunda = Parcela.objects.create(
+            venda=venda,
+            numero=2,
+            valor="875.00",
+            vencimento="2026-08-01",
+            status="pendente",
+        )
+
+        response = self.client.post(
+            reverse("parcela_marcar_pago", args=[primeira.pk]),
+            {"valor_recebido": "900,00", "next": reverse("financeiro")},
+        )
+
+        primeira.refresh_from_db()
+        segunda.refresh_from_db()
+        venda.refresh_from_db()
+        self.assertRedirects(response, reverse("financeiro"))
+        self.assertEqual(primeira.status, "pago")
+        self.assertEqual(primeira.valor_recebido, Decimal("875.00"))
+        self.assertEqual(primeira.valor_em_aberto, Decimal("0.00"))
+        self.assertEqual(segunda.status, "parcial")
+        self.assertEqual(segunda.valor_recebido, Decimal("25.00"))
+        self.assertEqual(segunda.valor_em_aberto, Decimal("850.00"))
+        self.assertEqual(venda.valor_pago, Decimal("900.00"))
+        self.assertEqual(venda.valor_pendente, Decimal("850.00"))
+        self.assertEqual(venda.status, "pendente")
+
+    def test_edicao_dilui_recebimento_menor_em_novas_parcelas(self):
+        cliente = Cliente.objects.create(nome="Cliente Menor", telefone="85999990000")
+        venda = Venda.objects.create(
+            cliente=cliente,
+            titulo="Aniversario",
+            valor_total="1750.00",
+            status="pendente",
+            forma_pagamento="pix",
+            condicao_pagamento="parcelado",
+            quantidade_parcelas=2,
+        )
+        Evento.objects.create(
+            cliente=cliente,
+            venda=venda,
+            nome="Cliente Menor",
+            tipo_evento="aniversario",
+            valor_cobrado="1750.00",
+            forma_pagamento="pix",
+            quantidade_parcelas=2,
+        )
+        primeira = Parcela.objects.create(
+            venda=venda,
+            numero=1,
+            valor="875.00",
+            vencimento="2026-07-01",
+            lembrete_em="2026-06-28",
+            status="pendente",
+        )
+        segunda = Parcela.objects.create(
+            venda=venda,
+            numero=2,
+            valor="875.00",
+            vencimento="2026-08-01",
+            lembrete_em="2026-07-29",
+            status="pendente",
+        )
+
+        response = self.client.post(
+            reverse("parcela_editar", args=[primeira.pk]),
+            {
+                "numero": "1",
+                "valor": "875,00",
+                "valor_recebido": "800,00",
+                "diluir_saldo": "on",
+                "total_parcelas_diluicao": "3",
+                "vencimento": "2026-07-01",
+                "data_pagamento": "2026-07-03",
+                "status": "parcial",
+                "lembrete_em": "2026-06-28",
+                "observacoes": "",
+            },
+        )
+
+        primeira.refresh_from_db()
+        segunda.refresh_from_db()
+        terceira = venda.parcelas.get(numero=3)
+        venda.refresh_from_db()
+        self.assertRedirects(response, reverse("financeiro"))
+        self.assertEqual(primeira.status, "pago")
+        self.assertEqual(primeira.valor, Decimal("800.00"))
+        self.assertEqual(primeira.valor_recebido, Decimal("800.00"))
+        self.assertEqual(segunda.valor, Decimal("475.00"))
+        self.assertEqual(segunda.valor_em_aberto, Decimal("475.00"))
+        self.assertEqual(terceira.valor, Decimal("475.00"))
+        self.assertEqual(terceira.valor_em_aberto, Decimal("475.00"))
+        self.assertEqual(venda.quantidade_parcelas, 3)
+        self.assertEqual(venda.valor_pago, Decimal("800.00"))
+        self.assertEqual(venda.valor_pendente, Decimal("950.00"))
+
     def test_venda_so_fica_paga_quando_recebido_cobre_total_contratado(self):
         venda, parcela = self.criar_venda_com_parcela()
         Parcela.objects.create(
