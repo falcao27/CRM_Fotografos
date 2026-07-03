@@ -549,6 +549,36 @@ class FinanceiroReceitasTests(TestCase):
         venda.refresh_from_db()
         self.assertEqual(venda.status, "pago")
 
+    def test_editar_parcela_paga_corrige_recebido_maior_que_contratado(self):
+        venda, parcela = self.criar_venda_com_parcela()
+        parcela.valor = Decimal("300.00")
+        parcela.valor_recebido = Decimal("1200.00")
+        parcela.data_pagamento = timezone.localdate()
+        parcela.status = "pago"
+        parcela.save()
+
+        response = self.client.post(
+            reverse("parcela_editar", args=[parcela.pk]),
+            {
+                "numero": "1",
+                "valor": "300,00",
+                "valor_recebido": "1200,00",
+                "vencimento": "2026-06-01",
+                "data_pagamento": timezone.localdate().isoformat(),
+                "status": "pago",
+                "lembrete_em": "",
+                "observacoes": "",
+            },
+        )
+
+        parcela.refresh_from_db()
+        venda.refresh_from_db()
+        self.assertRedirects(response, reverse("financeiro"))
+        self.assertEqual(parcela.status, "pago")
+        self.assertEqual(parcela.valor, Decimal("300.00"))
+        self.assertEqual(parcela.valor_recebido, Decimal("300.00"))
+        self.assertEqual(venda.valor_pago, Decimal("300.00"))
+
     def test_financeiro_mostra_evento_pix_parcelado_com_parcelas_abertas(self):
         cliente = Cliente.objects.create(nome="Antonio Silva", telefone="8501020305")
         venda = Venda.objects.create(

@@ -226,8 +226,10 @@ class ParcelaForm(forms.ModelForm):
         status = cleaned_data.get("status")
         if valor_recebido < 0:
             self.add_error("valor_recebido", "O valor recebido nao pode ser negativo.")
-        if status == "pago" and not valor_recebido:
+        if status == "pago" and (not valor_recebido or valor_recebido > valor):
             cleaned_data["valor_recebido"] = valor
+        elif valor_recebido > valor and valor:
+            self.add_error("valor_recebido", "O valor recebido nao pode ser maior que o valor contratado.")
         return cleaned_data
 
     def save(self, commit=True):
