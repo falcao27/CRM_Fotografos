@@ -172,8 +172,10 @@ class EventoDocumentoFlowTests(TestCase):
 
         self.assertRedirects(response, reverse("eventos"))
         parcelas = list(Parcela.objects.order_by("numero"))
-        self.assertEqual(len(parcelas), 3)
-        self.assertEqual(sum((parcela.valor for parcela in parcelas)), 600)
+        self.assertEqual(len(parcelas), 4)
+        self.assertEqual(parcelas[0].valor, Decimal("200.00"))
+        self.assertEqual(parcelas[0].vencimento.isoformat(), "2026-06-10")
+        self.assertEqual(sum((parcela.valor for parcela in parcelas[1:])), 600)
 
     def test_adiantamento_pago_nao_marca_parcela_restante_como_paga(self):
         dados = self.dados_evento()
@@ -198,16 +200,55 @@ class EventoDocumentoFlowTests(TestCase):
 
         self.assertRedirects(response, reverse("eventos"))
         evento = Evento.objects.select_related("venda").get(nome="Lia Nunes Benevides")
-        parcela = evento.venda.parcelas.get(numero=1)
+        adiantamento = evento.venda.parcelas.get(numero=1)
+        parcela = evento.venda.parcelas.get(numero=2)
         self.assertTrue(evento.adiantamento_pago)
         self.assertFalse(evento.pagamento_recebido)
         self.assertEqual(evento.venda.valor_total, Decimal("600.00"))
         self.assertEqual(evento.venda.valor_pago, Decimal("300.00"))
         self.assertEqual(evento.venda.valor_pendente, Decimal("300.00"))
+        self.assertEqual(adiantamento.valor, Decimal("300.00"))
+        self.assertEqual(adiantamento.valor_recebido, Decimal("300.00"))
+        self.assertEqual(adiantamento.status, "pago")
+        self.assertEqual(adiantamento.vencimento.isoformat(), "2026-06-11")
         self.assertEqual(parcela.valor, Decimal("300.00"))
         self.assertEqual(parcela.valor_recebido, Decimal("0.00"))
         self.assertEqual(parcela.status, "pendente")
+        self.assertEqual(parcela.vencimento.isoformat(), "2026-07-25")
         self.assertIsNone(parcela.data_pagamento)
+
+    def test_adiantamento_nao_pago_aparece_como_primeira_parcela_em_aberto(self):
+        dados = self.dados_evento()
+        dados.update(
+            {
+                "nome": "Lia Nunes Benevides",
+                "valor_cobrado": "600,00",
+                "adiantamento": "300,00",
+                "forma_pagamento": "pix",
+                "quantidade_parcelas": "1",
+                "primeira_parcela": "2026-06-11",
+                "parcela_numero": ["1"],
+                "parcela_valor": ["300,00"],
+                "parcela_vencimento": ["2026-07-25"],
+            }
+        )
+
+        response = self.client.post(reverse("evento_novo"), dados)
+
+        self.assertRedirects(response, reverse("eventos"))
+        evento = Evento.objects.select_related("venda").get(nome="Lia Nunes Benevides")
+        adiantamento = evento.venda.parcelas.get(numero=1)
+        parcela = evento.venda.parcelas.get(numero=2)
+        self.assertFalse(evento.adiantamento_pago)
+        self.assertEqual(evento.venda.valor_pago, Decimal("0.00"))
+        self.assertEqual(evento.venda.valor_pendente, Decimal("600.00"))
+        self.assertEqual(adiantamento.valor, Decimal("300.00"))
+        self.assertEqual(adiantamento.valor_recebido, Decimal("0.00"))
+        self.assertEqual(adiantamento.status, "pendente")
+        self.assertEqual(adiantamento.vencimento.isoformat(), "2026-06-11")
+        self.assertEqual(parcela.valor, Decimal("300.00"))
+        self.assertEqual(parcela.status, "pendente")
+        self.assertEqual(parcela.vencimento.isoformat(), "2026-07-25")
 
     def test_salvar_evento_corrige_parcela_restante_marcada_como_paga_por_engano(self):
         dados = self.dados_evento()
@@ -227,7 +268,7 @@ class EventoDocumentoFlowTests(TestCase):
         )
         self.client.post(reverse("evento_novo"), dados)
         evento = Evento.objects.select_related("venda").get(nome="Lia Nunes Benevides")
-        parcela = evento.venda.parcelas.get(numero=1)
+        parcela = evento.venda.parcelas.get(numero=2)
         self.assertEqual(parcela.status, "pago")
 
         dados.pop("pagamento_recebido")

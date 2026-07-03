@@ -592,11 +592,14 @@ class EventoForm(forms.ModelForm):
         venda.titulo = evento.tipo_evento or f"Evento - {evento.nome}"
         venda.valor_total = evento.valor_cobrado
         venda.forma_pagamento = evento.forma_pagamento
-        venda.condicao_pagamento = "parcelado" if evento.quantidade_parcelas > 1 else "avista"
-        venda.quantidade_parcelas = evento.quantidade_parcelas
+        tem_adiantamento = evento.adiantamento > 0
+        quantidade_restante = max(evento.quantidade_parcelas, 1)
+        total_parcelas = quantidade_restante + (1 if tem_adiantamento else 0)
+        venda.condicao_pagamento = "parcelado" if total_parcelas > 1 else "avista"
+        venda.quantidade_parcelas = total_parcelas
         venda.data_venda = venda.data_venda or timezone.localdate()
         pagamento_recebido = evento.pagamento_recebido and (
-            evento.quantidade_parcelas == 1 or evento.forma_pagamento == "cartao"
+            total_parcelas == 1 or evento.forma_pagamento == "cartao"
         )
         venda.status = "pago" if pagamento_recebido else "pendente"
         venda.observacoes = evento.observacoes
@@ -606,17 +609,37 @@ class EventoForm(forms.ModelForm):
             evento.venda = venda
             evento.save(update_fields=["venda", "atualizado_em"])
 
-        quantidade = max(evento.quantidade_parcelas, 1)
-        valor_base = (evento.valor_cobrado / quantidade).quantize(Decimal("0.01"))
-        restante = evento.valor_cobrado
+        valor_restante = max(evento.valor_cobrado - evento.adiantamento, Decimal("0.00"))
+        valor_base = (valor_restante / quantidade_restante).quantize(Decimal("0.01"))
+        restante = valor_restante
         parcelas_mantidas = []
         hoje = timezone.localdate()
         primeira_parcela = evento.primeira_parcela or hoje
-        for numero in range(1, quantidade + 1):
-            parcela = venda.parcelas.filter(numero=numero).first() or Parcela(venda=venda, numero=numero)
-            valor = valor_base if numero < quantidade else restante
+
+        if tem_adiantamento:
+            parcela = venda.parcelas.filter(numero=1).first() or Parcela(venda=venda, numero=1)
+            parcela.valor = evento.adiantamento
+            parcela.vencimento = primeira_parcela
+            parcela.lembrete_em = primeira_parcela
+            if evento.adiantamento_pago or evento.pagamento_recebido:
+                parcela.valor_recebido = evento.adiantamento
+                parcela.status = "pago"
+                parcela.data_pagamento = primeira_parcela
+            else:
+                parcela.valor_recebido = Decimal("0.00")
+                parcela.status = "pendente"
+                parcela.data_pagamento = None
+            parcela.observacoes = "Adiantamento informado no formulario de contrato do evento."
+            parcela.save()
+            parcelas_mantidas.append(parcela.pk)
+
+        deslocamento = 1 if tem_adiantamento else 0
+        for numero in range(1, quantidade_restante + 1):
+            numero_parcela = numero + deslocamento
+            parcela = venda.parcelas.filter(numero=numero_parcela).first() or Parcela(venda=venda, numero=numero_parcela)
+            valor = valor_base if numero < quantidade_restante else restante
             parcela.valor = valor
-            parcela.vencimento = add_months(primeira_parcela, numero - 1)
+            parcela.vencimento = add_months(primeira_parcela, numero - 1 + deslocamento)
             parcela.lembrete_em = parcela.vencimento
             if pagamento_recebido:
                 parcela.valor_recebido = valor

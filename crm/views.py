@@ -850,7 +850,7 @@ def dashboard(request):
     )
     eventos_com_adiantamento = filtrar_empresa(
         Evento.objects.filter(venda__isnull=False, adiantamento__gt=0, adiantamento_pago=True), request
-    ).exclude(venda__status="cancelado")
+    ).exclude(venda__status="cancelado").exclude(venda__parcelas__numero=1, venda__parcelas__valor=F("adiantamento"))
     adiantamentos_mes = eventos_com_adiantamento.filter(venda__data_venda__range=(inicio_mes, fim_mes)).aggregate(
         total=Sum("adiantamento")
     )["total"] or 0
@@ -1815,13 +1815,15 @@ def parcelas_para_formulario(evento=None, request=None):
             for indice in range(max(len(numeros), len(valores), len(vencimentos), 1))
         ]
     if evento and evento.venda_id:
+        tem_adiantamento = evento.adiantamento > 0
         return [
             {
-                "numero": parcela.numero,
+                "numero": parcela.numero - 1 if tem_adiantamento and parcela.numero > 1 else parcela.numero,
                 "valor": f"{parcela.valor:.2f}".replace(".", ","),
                 "vencimento": parcela.vencimento.isoformat(),
             }
             for parcela in evento.venda.parcelas.all()
+            if not (tem_adiantamento and parcela.numero == 1 and parcela.valor == evento.adiantamento)
         ]
     return [{"numero": 1, "valor": "", "vencimento": ""}]
 
@@ -1832,8 +1834,29 @@ def aplicar_parcelas_evento(evento, parcelas):
     venda = evento.venda
     hoje = timezone.localdate()
     parcelas_mantidas = []
+    primeira_parcela = evento.primeira_parcela or hoje
+    tem_adiantamento = evento.adiantamento > 0
+    if tem_adiantamento:
+        parcela = venda.parcelas.filter(numero=1).first() or Parcela(venda=venda, numero=1)
+        parcela.valor = evento.adiantamento
+        parcela.vencimento = primeira_parcela
+        parcela.lembrete_em = primeira_parcela
+        if evento.adiantamento_pago or evento.pagamento_recebido:
+            parcela.valor_recebido = evento.adiantamento
+            parcela.status = "pago"
+            parcela.data_pagamento = primeira_parcela
+        else:
+            parcela.valor_recebido = Decimal("0.00")
+            parcela.status = "pendente"
+            parcela.data_pagamento = None
+        parcela.observacoes = "Adiantamento informado no formulario de contrato do evento."
+        parcela.save()
+        parcelas_mantidas.append(parcela.pk)
+
+    deslocamento = 1 if tem_adiantamento else 0
     for item in parcelas:
-        parcela = venda.parcelas.filter(numero=item["numero"]).first() or Parcela(venda=venda, numero=item["numero"])
+        numero_parcela = item["numero"] + deslocamento
+        parcela = venda.parcelas.filter(numero=numero_parcela).first() or Parcela(venda=venda, numero=numero_parcela)
         parcela.valor = item["valor"]
         parcela.vencimento = item["vencimento"]
         parcela.lembrete_em = item["vencimento"]
@@ -1849,8 +1872,8 @@ def aplicar_parcelas_evento(evento, parcelas):
         parcela.save()
         parcelas_mantidas.append(parcela.pk)
     venda.parcelas.exclude(pk__in=parcelas_mantidas).delete()
-    venda.quantidade_parcelas = len(parcelas)
-    venda.condicao_pagamento = "parcelado" if len(parcelas) > 1 else "avista"
+    venda.quantidade_parcelas = len(parcelas) + deslocamento
+    venda.condicao_pagamento = "parcelado" if venda.quantidade_parcelas > 1 else "avista"
     venda.valor_total = evento.valor_cobrado
     venda.status = "pago" if venda.valor_pago >= venda.valor_total and venda.valor_total else "pendente"
     venda.save(update_fields=["quantidade_parcelas", "condicao_pagamento", "valor_total", "status", "atualizado_em"])
@@ -1916,7 +1939,7 @@ def dados_relatorio_periodo(request, inicio_mes, fim_mes):
         adiantamento__gt=0,
         adiantamento_pago=True,
         venda__data_venda__range=(inicio_mes, fim_mes),
-    ), request).exclude(venda__status="cancelado")
+    ), request).exclude(venda__status="cancelado").exclude(venda__parcelas__numero=1, venda__parcelas__valor=F("adiantamento"))
     despesas_mes = filtrar_empresa(Despesa.objects.filter(filtro_data_financeira_despesa(inicio_mes, fim_mes)), request)
     eventos_mes = filtrar_empresa(Evento.objects.filter(
         Q(criado_em__date__range=(inicio_mes, fim_mes)) | Q(atualizado_em__date__range=(inicio_mes, fim_mes))
