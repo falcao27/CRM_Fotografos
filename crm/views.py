@@ -210,11 +210,10 @@ def diluir_saldo_venda(venda, parcela_referencia, total_parcelas=None):
 
     parcela_referencia.refresh_from_db()
     if parcela_referencia.valor_recebido_efetivo > 0 and parcela_referencia.valor_em_aberto > 0:
-        parcela_referencia.valor = parcela_referencia.valor_recebido_efetivo
         parcela_referencia.status = "pago"
         if not parcela_referencia.data_pagamento:
             parcela_referencia.data_pagamento = timezone.localdate()
-        parcela_referencia.save(update_fields=["valor", "status", "data_pagamento"])
+        parcela_referencia.save(update_fields=["status", "data_pagamento"])
 
     venda.refresh_from_db()
     saldo_aberto = venda.valor_pendente
@@ -227,7 +226,7 @@ def diluir_saldo_venda(venda, parcela_referencia, total_parcelas=None):
     restante = saldo_aberto
     for indice, parcela in enumerate(parcelas_abertas):
         valor_aberto = valor_base if indice < len(parcelas_abertas) - 1 else restante
-        parcela.valor = parcela.valor_recebido_efetivo + valor_aberto
+        parcela.valor = max(parcela.valor_recebido_efetivo + valor_aberto - parcela.saldo_pago_anterior, Decimal("0.00"))
         if parcela.valor_recebido_efetivo >= parcela.valor and parcela.valor:
             parcela.status = "pago"
             if not parcela.data_pagamento:

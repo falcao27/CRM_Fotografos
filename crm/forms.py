@@ -245,6 +245,10 @@ class ParcelaForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.valor_contratado_original = getattr(self.instance, "valor", None)
+        if self.instance and self.instance.pk:
+            self.fields["valor"].widget.attrs["readonly"] = "readonly"
+            self.fields["valor"].help_text = "Valor contratado fixo. Ajuste apenas o valor recebido."
         venda = getattr(self.instance, "venda", None)
         if venda:
             self.fields["total_parcelas_diluicao"].initial = venda.quantidade_parcelas
@@ -259,21 +263,23 @@ class ParcelaForm(forms.ModelForm):
         if status in ["pendente", "atrasado"]:
             cleaned_data["valor_recebido"] = Decimal("0.00")
             cleaned_data["data_pagamento"] = None
-        elif status == "pago" and (not valor_recebido or valor_recebido > valor):
+        elif status == "pago" and not valor_recebido:
             cleaned_data["valor_recebido"] = valor
-        elif valor_recebido > valor and valor:
-            self.add_error("valor_recebido", "O valor recebido nao pode ser maior que o valor contratado.")
+        if self.instance and self.instance.pk and self.valor_contratado_original is not None:
+            cleaned_data["valor"] = self.valor_contratado_original
         return cleaned_data
 
     def save(self, commit=True):
         parcela = super().save(commit=False)
+        if self.instance and self.instance.pk and self.valor_contratado_original is not None:
+            parcela.valor = self.valor_contratado_original
         if not parcela.valor_recebido:
             parcela.valor_recebido = Decimal("0.00")
         if parcela.status in ["pendente", "atrasado"]:
             parcela.valor_recebido = Decimal("0.00")
             parcela.data_pagamento = None
         elif parcela.status == "pago":
-            if parcela.valor and (not parcela.valor_recebido or parcela.valor_recebido > parcela.valor):
+            if parcela.valor and not parcela.valor_recebido:
                 parcela.valor_recebido = parcela.valor
             parcela.status = "pago"
             if not parcela.data_pagamento:

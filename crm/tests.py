@@ -674,6 +674,7 @@ class FinanceiroReceitasTests(TestCase):
         venda.refresh_from_db()
         self.assertRedirects(response, reverse("financeiro"))
         self.assertEqual(primeira.status, "pago")
+        self.assertEqual(primeira.valor, Decimal("875.00"))
         self.assertEqual(primeira.valor_recebido, Decimal("900.00"))
         self.assertEqual(primeira.valor_em_aberto, Decimal("0.00"))
         self.assertEqual(segunda.status_financeiro, "parcial")
@@ -682,6 +683,129 @@ class FinanceiroReceitasTests(TestCase):
         self.assertEqual(venda.valor_pago, Decimal("900.00"))
         self.assertEqual(venda.valor_pendente, Decimal("850.00"))
         self.assertEqual(venda.status, "pendente")
+
+    def test_edicao_preserva_contrato_e_usa_recebido_maior_no_saldo(self):
+        cliente = Cliente.objects.create(nome="Cliente Edicao", telefone="85999990000")
+        venda = Venda.objects.create(
+            cliente=cliente,
+            titulo="Aniversario",
+            valor_total="1750.00",
+            status="pendente",
+            forma_pagamento="pix",
+            condicao_pagamento="parcelado",
+            quantidade_parcelas=2,
+        )
+        Evento.objects.create(
+            cliente=cliente,
+            venda=venda,
+            nome="Cliente Edicao",
+            tipo_evento="aniversario",
+            valor_cobrado="1750.00",
+            forma_pagamento="pix",
+            quantidade_parcelas=2,
+        )
+        primeira = Parcela.objects.create(
+            venda=venda,
+            numero=1,
+            valor="875.00",
+            vencimento="2026-07-01",
+            lembrete_em="2026-07-03",
+            status="pendente",
+        )
+        segunda = Parcela.objects.create(
+            venda=venda,
+            numero=2,
+            valor="875.00",
+            vencimento="2026-08-02",
+            lembrete_em="2026-08-02",
+            status="pendente",
+        )
+
+        response = self.client.post(
+            reverse("parcela_editar", args=[primeira.pk]),
+            {
+                "numero": "1",
+                "valor": "900,00",
+                "valor_recebido": "900,00",
+                "total_parcelas_diluicao": "2",
+                "vencimento": "2026-07-01",
+                "data_pagamento": "2026-07-03",
+                "status": "pago",
+                "lembrete_em": "2026-07-03",
+                "observacoes": "",
+            },
+        )
+
+        primeira.refresh_from_db()
+        segunda.refresh_from_db()
+        self.assertRedirects(response, reverse("financeiro"))
+        self.assertEqual(primeira.valor, Decimal("875.00"))
+        self.assertEqual(primeira.valor_recebido, Decimal("900.00"))
+        self.assertEqual(primeira.valor_em_aberto, Decimal("0.00"))
+        self.assertEqual(segunda.valor, Decimal("875.00"))
+        self.assertEqual(segunda.valor_recebido, Decimal("0.00"))
+        self.assertEqual(segunda.valor_em_aberto, Decimal("850.00"))
+
+    def test_parcela_paga_com_valor_menor_acrescenta_na_proxima(self):
+        cliente = Cliente.objects.create(nome="Cliente Menor Direto", telefone="85999990000")
+        venda = Venda.objects.create(
+            cliente=cliente,
+            titulo="Aniversario",
+            valor_total="1750.00",
+            status="pendente",
+            forma_pagamento="pix",
+            condicao_pagamento="parcelado",
+            quantidade_parcelas=2,
+        )
+        Evento.objects.create(
+            cliente=cliente,
+            venda=venda,
+            nome="Cliente Menor Direto",
+            tipo_evento="aniversario",
+            valor_cobrado="1750.00",
+            forma_pagamento="pix",
+            quantidade_parcelas=2,
+        )
+        primeira = Parcela.objects.create(
+            venda=venda,
+            numero=1,
+            valor="875.00",
+            vencimento="2026-07-01",
+            lembrete_em="2026-07-03",
+            status="pendente",
+        )
+        segunda = Parcela.objects.create(
+            venda=venda,
+            numero=2,
+            valor="875.00",
+            vencimento="2026-08-02",
+            lembrete_em="2026-08-02",
+            status="pendente",
+        )
+
+        response = self.client.post(
+            reverse("parcela_editar", args=[primeira.pk]),
+            {
+                "numero": "1",
+                "valor": "875,00",
+                "valor_recebido": "800,00",
+                "total_parcelas_diluicao": "2",
+                "vencimento": "2026-07-01",
+                "data_pagamento": "2026-07-03",
+                "status": "pago",
+                "lembrete_em": "2026-07-03",
+                "observacoes": "",
+            },
+        )
+
+        primeira.refresh_from_db()
+        segunda.refresh_from_db()
+        self.assertRedirects(response, reverse("financeiro"))
+        self.assertEqual(primeira.valor, Decimal("875.00"))
+        self.assertEqual(primeira.valor_recebido, Decimal("800.00"))
+        self.assertEqual(primeira.valor_em_aberto, Decimal("0.00"))
+        self.assertEqual(segunda.valor, Decimal("875.00"))
+        self.assertEqual(segunda.valor_em_aberto, Decimal("950.00"))
 
     def test_edicao_dilui_recebimento_menor_em_novas_parcelas(self):
         cliente = Cliente.objects.create(nome="Cliente Menor", telefone="85999990000")
@@ -742,9 +866,9 @@ class FinanceiroReceitasTests(TestCase):
         venda.refresh_from_db()
         self.assertRedirects(response, reverse("financeiro"))
         self.assertEqual(primeira.status, "pago")
-        self.assertEqual(primeira.valor, Decimal("800.00"))
+        self.assertEqual(primeira.valor, Decimal("875.00"))
         self.assertEqual(primeira.valor_recebido, Decimal("800.00"))
-        self.assertEqual(segunda.valor, Decimal("475.00"))
+        self.assertEqual(segunda.valor, Decimal("400.00"))
         self.assertEqual(segunda.valor_em_aberto, Decimal("475.00"))
         self.assertEqual(terceira.valor, Decimal("475.00"))
         self.assertEqual(terceira.valor_em_aberto, Decimal("475.00"))
@@ -781,7 +905,7 @@ class FinanceiroReceitasTests(TestCase):
         venda.refresh_from_db()
         self.assertEqual(venda.status, "pago")
 
-    def test_editar_parcela_paga_corrige_recebido_maior_que_contratado(self):
+    def test_editar_parcela_paga_preserva_recebido_maior_que_contratado(self):
         venda, parcela = self.criar_venda_com_parcela()
         parcela.valor = Decimal("300.00")
         parcela.valor_recebido = Decimal("1200.00")
@@ -808,8 +932,8 @@ class FinanceiroReceitasTests(TestCase):
         self.assertRedirects(response, reverse("financeiro"))
         self.assertEqual(parcela.status, "pago")
         self.assertEqual(parcela.valor, Decimal("300.00"))
-        self.assertEqual(parcela.valor_recebido, Decimal("300.00"))
-        self.assertEqual(venda.valor_pago, Decimal("300.00"))
+        self.assertEqual(parcela.valor_recebido, Decimal("1200.00"))
+        self.assertEqual(venda.valor_pago, Decimal("1200.00"))
 
     def test_editar_parcela_paga_para_pendente_limpa_pagamento(self):
         venda, parcela = self.criar_venda_com_parcela()
