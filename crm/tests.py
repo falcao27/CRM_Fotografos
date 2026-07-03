@@ -175,6 +175,74 @@ class EventoDocumentoFlowTests(TestCase):
         self.assertEqual(len(parcelas), 3)
         self.assertEqual(sum((parcela.valor for parcela in parcelas)), 600)
 
+    def test_adiantamento_pago_nao_marca_parcela_restante_como_paga(self):
+        dados = self.dados_evento()
+        dados.update(
+            {
+                "nome": "Lia Nunes Benevides",
+                "email": "linanunesb@gmail.com",
+                "contato": "85992179292",
+                "valor_cobrado": "600,00",
+                "adiantamento": "300,00",
+                "adiantamento_pago": "on",
+                "forma_pagamento": "pix",
+                "quantidade_parcelas": "1",
+                "primeira_parcela": "2026-06-11",
+                "parcela_numero": ["1"],
+                "parcela_valor": ["300,00"],
+                "parcela_vencimento": ["2026-07-25"],
+            }
+        )
+
+        response = self.client.post(reverse("evento_novo"), dados)
+
+        self.assertRedirects(response, reverse("eventos"))
+        evento = Evento.objects.select_related("venda").get(nome="Lia Nunes Benevides")
+        parcela = evento.venda.parcelas.get(numero=1)
+        self.assertTrue(evento.adiantamento_pago)
+        self.assertFalse(evento.pagamento_recebido)
+        self.assertEqual(evento.venda.valor_total, Decimal("600.00"))
+        self.assertEqual(evento.venda.valor_pago, Decimal("300.00"))
+        self.assertEqual(evento.venda.valor_pendente, Decimal("300.00"))
+        self.assertEqual(parcela.valor, Decimal("300.00"))
+        self.assertEqual(parcela.valor_recebido, Decimal("0.00"))
+        self.assertEqual(parcela.status, "pendente")
+        self.assertIsNone(parcela.data_pagamento)
+
+    def test_salvar_evento_corrige_parcela_restante_marcada_como_paga_por_engano(self):
+        dados = self.dados_evento()
+        dados.update(
+            {
+                "nome": "Lia Nunes Benevides",
+                "valor_cobrado": "600,00",
+                "adiantamento": "300,00",
+                "forma_pagamento": "pix",
+                "quantidade_parcelas": "1",
+                "primeira_parcela": "2026-06-11",
+                "parcela_numero": ["1"],
+                "parcela_valor": ["300,00"],
+                "parcela_vencimento": ["2026-07-25"],
+                "pagamento_recebido": "on",
+            }
+        )
+        self.client.post(reverse("evento_novo"), dados)
+        evento = Evento.objects.select_related("venda").get(nome="Lia Nunes Benevides")
+        parcela = evento.venda.parcelas.get(numero=1)
+        self.assertEqual(parcela.status, "pago")
+
+        dados.pop("pagamento_recebido")
+        dados["adiantamento_pago"] = "on"
+        response = self.client.post(reverse("evento_editar", args=[evento.pk]), dados)
+
+        parcela.refresh_from_db()
+        evento.refresh_from_db()
+        self.assertRedirects(response, reverse("eventos"))
+        self.assertTrue(evento.adiantamento_pago)
+        self.assertFalse(evento.pagamento_recebido)
+        self.assertEqual(parcela.status, "pendente")
+        self.assertEqual(parcela.valor_recebido, Decimal("0.00"))
+        self.assertIsNone(parcela.data_pagamento)
+
     def test_documento_rascunho_nao_envia_antes_de_salvar_revisao(self):
         dados = self.dados_evento()
         dados["acao"] = "gerar_contrato"

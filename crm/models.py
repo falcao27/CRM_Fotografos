@@ -256,7 +256,10 @@ class Venda(models.Model):
 
     @property
     def valor_pago(self):
-        return sum((parcela.valor_recebido_efetivo for parcela in self.parcelas.all()), Decimal("0.00"))
+        total = sum((parcela.valor_recebido_efetivo for parcela in self.parcelas.all()), Decimal("0.00"))
+        if hasattr(self, "evento") and self.evento.adiantamento_pago:
+            total += self.evento.adiantamento
+        return total
 
     @property
     def valor_pendente(self):

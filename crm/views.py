@@ -1841,7 +1841,8 @@ def aplicar_parcelas_evento(evento, parcelas):
             parcela.valor_recebido = parcela.valor
             parcela.status = "pago"
             parcela.data_pagamento = hoje
-        elif not parcela.valor_recebido:
+        else:
+            parcela.valor_recebido = Decimal("0.00")
             parcela.status = "pendente"
             parcela.data_pagamento = None
         parcela.observacoes = "Informada no formulario de contrato do evento."
