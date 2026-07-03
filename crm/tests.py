@@ -1,7 +1,9 @@
 from calendar import monthrange
+from importlib import import_module
 from io import BytesIO
 from decimal import Decimal
 
+from django.apps import apps as django_apps
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
@@ -744,6 +746,43 @@ class FinanceiroReceitasTests(TestCase):
         self.assertEqual(primeira.valor_em_aberto, Decimal("0.00"))
         self.assertEqual(segunda.valor, Decimal("875.00"))
         self.assertEqual(segunda.valor_recebido, Decimal("0.00"))
+        self.assertEqual(segunda.valor_em_aberto, Decimal("850.00"))
+
+    def test_migracao_repara_contrato_contaminado_por_valor_recebido(self):
+        cliente = Cliente.objects.create(nome="Cliente Migracao", telefone="85999990000")
+        venda = Venda.objects.create(
+            cliente=cliente,
+            titulo="Aniversario",
+            valor_total="1750.00",
+            status="pendente",
+            forma_pagamento="pix",
+            condicao_pagamento="parcelado",
+            quantidade_parcelas=2,
+        )
+        primeira = Parcela.objects.create(
+            venda=venda,
+            numero=1,
+            valor="900.00",
+            valor_recebido="900.00",
+            vencimento="2026-07-01",
+            status="pago",
+        )
+        segunda = Parcela.objects.create(
+            venda=venda,
+            numero=2,
+            valor="875.00",
+            vencimento="2026-08-02",
+            status="pendente",
+        )
+
+        migracao = import_module("crm.migrations.0030_reparar_valor_contratado_parcelas")
+        migracao.reparar_valores_contratados(django_apps, None)
+
+        primeira.refresh_from_db()
+        segunda.refresh_from_db()
+        self.assertEqual(primeira.valor, Decimal("875.00"))
+        self.assertEqual(primeira.valor_recebido, Decimal("900.00"))
+        self.assertEqual(segunda.valor, Decimal("875.00"))
         self.assertEqual(segunda.valor_em_aberto, Decimal("850.00"))
 
     def test_parcela_paga_com_valor_menor_acrescenta_na_proxima(self):
