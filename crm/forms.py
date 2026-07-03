@@ -226,7 +226,10 @@ class ParcelaForm(forms.ModelForm):
         status = cleaned_data.get("status")
         if valor_recebido < 0:
             self.add_error("valor_recebido", "O valor recebido nao pode ser negativo.")
-        if status == "pago" and (not valor_recebido or valor_recebido > valor):
+        if status in ["pendente", "atrasado"]:
+            cleaned_data["valor_recebido"] = Decimal("0.00")
+            cleaned_data["data_pagamento"] = None
+        elif status == "pago" and (not valor_recebido or valor_recebido > valor):
             cleaned_data["valor_recebido"] = valor
         elif valor_recebido > valor and valor:
             self.add_error("valor_recebido", "O valor recebido nao pode ser maior que o valor contratado.")
@@ -236,7 +239,12 @@ class ParcelaForm(forms.ModelForm):
         parcela = super().save(commit=False)
         if not parcela.valor_recebido:
             parcela.valor_recebido = Decimal("0.00")
-        if parcela.valor_recebido >= parcela.valor and parcela.valor:
+        if parcela.status in ["pendente", "atrasado"]:
+            parcela.valor_recebido = Decimal("0.00")
+            parcela.data_pagamento = None
+        elif parcela.status == "pago":
+            if parcela.valor and (not parcela.valor_recebido or parcela.valor_recebido > parcela.valor):
+                parcela.valor_recebido = parcela.valor
             parcela.status = "pago"
             if not parcela.data_pagamento:
                 parcela.data_pagamento = timezone.localdate()

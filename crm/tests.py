@@ -579,6 +579,44 @@ class FinanceiroReceitasTests(TestCase):
         self.assertEqual(parcela.valor_recebido, Decimal("300.00"))
         self.assertEqual(venda.valor_pago, Decimal("300.00"))
 
+    def test_editar_parcela_paga_para_pendente_limpa_pagamento(self):
+        venda, parcela = self.criar_venda_com_parcela()
+        evento = venda.evento
+        venda.valor_total = Decimal("300.00")
+        venda.status = "pago"
+        venda.save()
+        evento.pagamento_recebido = True
+        evento.save()
+        parcela.valor = Decimal("300.00")
+        parcela.valor_recebido = Decimal("300.00")
+        parcela.data_pagamento = timezone.localdate()
+        parcela.status = "pago"
+        parcela.save()
+
+        response = self.client.post(
+            reverse("parcela_editar", args=[parcela.pk]),
+            {
+                "numero": "1",
+                "valor": "300,00",
+                "valor_recebido": "300,00",
+                "vencimento": "2026-06-01",
+                "data_pagamento": timezone.localdate().isoformat(),
+                "status": "pendente",
+                "lembrete_em": "",
+                "observacoes": "",
+            },
+        )
+
+        parcela.refresh_from_db()
+        venda.refresh_from_db()
+        evento.refresh_from_db()
+        self.assertRedirects(response, reverse("financeiro"))
+        self.assertEqual(parcela.status, "pendente")
+        self.assertEqual(parcela.valor_recebido, Decimal("0.00"))
+        self.assertIsNone(parcela.data_pagamento)
+        self.assertEqual(venda.status, "pendente")
+        self.assertFalse(evento.pagamento_recebido)
+
     def test_financeiro_mostra_evento_pix_parcelado_com_parcelas_abertas(self):
         cliente = Cliente.objects.create(nome="Antonio Silva", telefone="8501020305")
         venda = Venda.objects.create(
