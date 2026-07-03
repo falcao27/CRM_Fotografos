@@ -299,12 +299,25 @@ class Parcela(models.Model):
 
     @property
     def valor_em_aberto(self):
-        return max(self.valor - self.valor_recebido_efetivo, Decimal("0.00"))
+        return max(self.valor - self.valor_recebido_efetivo - self.credito_recebido_anterior, Decimal("0.00"))
+
+    @property
+    def credito_recebido_anterior(self):
+        if not self.venda_id:
+            return Decimal("0.00")
+        parcelas_anteriores = self.venda.parcelas.filter(
+            models.Q(vencimento__lt=self.vencimento)
+            | models.Q(vencimento=self.vencimento, numero__lt=self.numero)
+            | models.Q(vencimento=self.vencimento, numero=self.numero, id__lt=self.id)
+        )
+        total_recebido = sum((parcela.valor_recebido_efetivo for parcela in parcelas_anteriores), Decimal("0.00"))
+        total_contratado = sum((parcela.valor for parcela in parcelas_anteriores), Decimal("0.00"))
+        return max(total_recebido - total_contratado, Decimal("0.00"))
 
     @property
     def deve_alertar(self):
         hoje = timezone.localdate()
-        if self.status == "pago":
+        if self.status == "pago" or self.valor_em_aberto <= Decimal("0.00"):
             return False
         if self.vencimento < hoje:
             return True
@@ -312,6 +325,8 @@ class Parcela(models.Model):
 
     @property
     def status_financeiro(self):
+        if self.status != "pago" and self.credito_recebido_anterior > Decimal("0.00"):
+            return "parcial" if self.valor_em_aberto > Decimal("0.00") else "pago"
         if self.status != "pago" and self.vencimento < timezone.localdate():
             return "vencido"
         return self.status

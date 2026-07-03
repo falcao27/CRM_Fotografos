@@ -180,29 +180,10 @@ def aplicar_recebimento_parcela(parcela, valor_baixa, data_pagamento):
     if valor_baixa <= Decimal("0.00"):
         return
 
-    parcelas = list(parcela.venda.parcelas.order_by("vencimento", "numero", "id"))
-    indice_atual = next((indice for indice, item in enumerate(parcelas) if item.pk == parcela.pk), 0)
-    parcelas_alvo = [parcelas[indice_atual], *parcelas[indice_atual + 1 :]]
-    restante = valor_baixa
-
-    for parcela_alvo in parcelas_alvo:
-        if restante <= Decimal("0.00"):
-            break
-        valor_em_aberto = parcela_alvo.valor_em_aberto
-        if valor_em_aberto <= Decimal("0.00"):
-            continue
-        valor_aplicado = min(restante, valor_em_aberto)
-        parcela_alvo.valor_recebido = (parcela_alvo.valor_recebido or Decimal("0.00")) + valor_aplicado
-        parcela_alvo.data_pagamento = data_pagamento
-        parcela_alvo.status = "pago" if parcela_alvo.valor_recebido >= parcela_alvo.valor else "parcial"
-        parcela_alvo.save(update_fields=["valor_recebido", "status", "data_pagamento"])
-        restante -= valor_aplicado
-
-    if restante > Decimal("0.00"):
-        parcela.valor_recebido = (parcela.valor_recebido or Decimal("0.00")) + restante
-        parcela.data_pagamento = data_pagamento
-        parcela.status = "pago" if parcela.valor_recebido >= parcela.valor else "parcial"
-        parcela.save(update_fields=["valor_recebido", "status", "data_pagamento"])
+    parcela.valor_recebido = (parcela.valor_recebido or Decimal("0.00")) + valor_baixa
+    parcela.data_pagamento = data_pagamento
+    parcela.status = "pago" if parcela.valor_em_aberto <= Decimal("0.00") else "parcial"
+    parcela.save(update_fields=["valor_recebido", "status", "data_pagamento"])
 
 
 def diluir_saldo_venda(venda, parcela_referencia, total_parcelas=None):
@@ -949,18 +930,15 @@ def dashboard(request):
         total=Sum("valor_recebido")
     )["total"] or 0
     receitas_recebidas += adiantamentos_mes
-    receitas_a_receber = (
-        parcelas_eventos.exclude(status="pago")
-        .filter(vencimento__range=(inicio_mes, fim_mes))
-        .aggregate(total=Sum(F("valor") - F("valor_recebido"), output_field=DecimalField()))["total"]
-        or 0
-    )
+    parcelas_a_receber_mes = parcelas_eventos.exclude(status="pago").filter(vencimento__range=(inicio_mes, fim_mes))
+    receitas_a_receber = sum((parcela.valor_em_aberto for parcela in parcelas_a_receber_mes), Decimal("0.00"))
     receitas_recebidas_todos = (parcelas_eventos.aggregate(total=Sum("valor_recebido"))["total"] or 0) + (
         eventos_com_adiantamento.aggregate(total=Sum("adiantamento"))["total"] or 0
     )
-    receitas_a_receber_todos = parcelas_eventos.exclude(status="pago").aggregate(
-        total=Sum(F("valor") - F("valor_recebido"), output_field=DecimalField())
-    )["total"] or 0
+    receitas_a_receber_todos = sum(
+        (parcela.valor_em_aberto for parcela in parcelas_eventos.exclude(status="pago")),
+        Decimal("0.00"),
+    )
     receita_total_eventos = vendas_eventos.aggregate(total=Sum("valor_total"))["total"] or 0
     if filtro_receita == "todos":
         receitas_recebidas = receitas_recebidas_todos
