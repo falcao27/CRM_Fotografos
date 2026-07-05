@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block page_title %}{{ page_title }}{% endblock %}
+{% block page_subtitle %}{{ page_subtitle }}{% endblock %}
+
+{% block content %}
+<section class="finance-groups">
+  {% for grupo in grupos %}
+    <button class="panel finance-group-trigger" type="button" data-edition-target="edicaoMes{{ forloop.counter }}">
+      <span>{{ grupo.titulo }}</span>
+      <small>{{ grupo.descricao }}</small>
+      <strong>{{ grupo.total }}</strong>
+    </button>
+  {% empty %}
+    <section class="panel"><p class="empty">{{ empty_message }}</p></section>
+  {% endfor %}
+</section>
+
+<section class="finance-group-popups">
+  {% for grupo in grupos %}
+    <article class="panel finance-group-panel" id="edicaoMes{{ forloop.counter }}" hidden>
+      <button class="modal-close finance-group-close" type="button" data-edition-close aria-label="Fechar"><i data-lucide="x"></i></button>
+      <h2>{{ grupo.titulo }}</h2>
+      <label class="finance-group-search">
+        <span>Buscar cliente, contato ou pais</span>
+        <input type="search" placeholder="Digite cliente, contato ou pais" data-edition-search>
+      </label>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>Evento</th>
+              <th>Data da edicao</th>
+              <th>Data do evento</th>
+              <th>Contato</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for evento in grupo.itens %}
+              <tr
+                data-edition-row
+                data-edition-search="{{ evento.nome|lower }} {{ evento.contato|lower }} {{ evento.edicao_cliente_pais|lower }} {{ evento.edicao_contato|lower }}"
+              >
+                <td>
+                  <strong>{{ evento.edicao_cliente_pais|default:evento.nome }}</strong>
+                  {% if evento.cliente %}<br><small>Cliente cadastrado</small>{% endif %}
+                </td>
+                <td>{{ evento.get_tipo_evento_display|default:"Evento" }}</td>
+                <td>{{ evento.data_operacional|date:"d/m/Y" }}</td>
+                <td>
+                  {{ evento.data_festa|date:"d/m/Y" }}
+                  {% if evento.horario %}<br><small>{{ evento.horario|time:"H:i" }}</small>{% endif %}
+                </td>
+                <td>{{ evento.edicao_contato|default:evento.contato|default:"-" }}</td>
+                <td><span class="badge {{ evento.edicao_status }}">{{ evento.get_edicao_status_display }}</span></td>
+                <td class="actions">
+                  <a class="icon-link" href="{% url 'edicao_evento_editar' evento.pk %}" title="Editar edicao"><i data-lucide="pencil"></i></a>
+                </td>
+              </tr>
+            {% endfor %}
+            <tr data-edition-empty-row hidden>
+              <td colspan="7"><p class="empty">Nenhum cliente encontrado neste mes.</p></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+  {% endfor %}
+</section>
+
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    function refreshIcons() {
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    document.querySelectorAll("[data-edition-target]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        const panel = document.getElementById(button.dataset.editionTarget);
+        document.querySelectorAll(".finance-group-panel").forEach(function (item) {
+          item.hidden = item !== panel || !item.hidden;
+        });
+        refreshIcons();
+      });
+    });
+
+    document.querySelectorAll("[data-edition-close]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        button.closest(".finance-group-panel").hidden = true;
+      });
+    });
+
+    document.querySelectorAll("[data-edition-search]").forEach(function (input) {
+      input.addEventListener("input", function () {
+        const panel = input.closest(".finance-group-panel");
+        const query = input.value.trim().toLowerCase();
+        const rows = panel.querySelectorAll("[data-edition-row]");
+        const empty = panel.querySelector("[data-edition-empty-row]");
+        let visible = 0;
+
+        rows.forEach(function (row) {
+          const matches = row.dataset.editionSearch.includes(query);
+          row.hidden = !matches;
+          if (matches) visible += 1;
+        });
+
+        empty.hidden = visible > 0;
+      });
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape") return;
+      document.querySelectorAll(".finance-group-panel:not([hidden])").forEach(function (panel) {
+        panel.hidden = true;
+      });
+    });
+  });
+</script>
+{% endblock %}

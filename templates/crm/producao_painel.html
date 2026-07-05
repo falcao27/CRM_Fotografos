@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% load crm_format %}
+
+{% block page_title %}{{ page_title }}{% endblock %}
+{% block page_subtitle %}{{ page_subtitle }}{% endblock %}
+
+{% block content %}
+<section class="finance-groups">
+  {% for grupo in grupos %}
+    <button class="panel finance-group-trigger" type="button" data-production-target="{{ target_prefix }}{{ forloop.counter }}">
+      <span>{{ grupo.titulo }}</span>
+      <small>{{ grupo.descricao }}</small>
+      <strong>{{ grupo.total }}</strong>
+    </button>
+  {% empty %}
+    <section class="panel"><p class="empty">{{ empty_message }}</p></section>
+  {% endfor %}
+</section>
+
+<section class="finance-group-popups">
+  {% for grupo in grupos %}
+    <article class="panel finance-group-panel" id="{{ target_prefix }}{{ forloop.counter }}" hidden>
+      <button class="modal-close finance-group-close" type="button" data-production-close aria-label="Fechar"><i data-lucide="x"></i></button>
+      <h2>{{ grupo.titulo }}</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>Evento</th>
+              <th>{{ data_label }}</th>
+              <th>Data do evento</th>
+              <th>Local</th>
+              <th>Album</th>
+              <th>Contato</th>
+              <th>Acoes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for evento in grupo.itens %}
+              <tr>
+                <td><strong>{{ evento.nome }}</strong>{% if evento.cliente %}<br><small>Cliente cadastrado</small>{% endif %}</td>
+                <td>{{ evento.get_tipo_evento_display|default:"Evento" }}</td>
+                <td>{{ evento.data_operacional|date:"d/m/Y" }}</td>
+                <td>
+                  {{ evento.data_festa|date:"d/m/Y" }}
+                  {% if evento.horario %}<br><small>{{ evento.horario|time:"H:i" }}</small>{% endif %}
+                </td>
+                <td>{{ evento.local_evento|default:"-" }}</td>
+                <td>{% if evento.tem_album %}<span class="badge pago">Sim</span>{% else %}<span class="badge pendente">Nao</span>{% endif %}</td>
+                <td>{{ evento.contato|default:"-" }}</td>
+                <td class="actions">
+                  <a class="icon-link" href="{% url 'evento_editar' evento.pk %}" title="Editar evento"><i data-lucide="pencil"></i></a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  {% endfor %}
+</section>
+
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    function refreshIcons() {
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    document.querySelectorAll("[data-production-target]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        const panel = document.getElementById(button.dataset.productionTarget);
+        document.querySelectorAll(".finance-group-panel").forEach(function (item) {
+          item.hidden = item !== panel || !item.hidden;
+        });
+        refreshIcons();
+      });
+    });
+
+    document.querySelectorAll("[data-production-close]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        button.closest(".finance-group-panel").hidden = true;
+      });
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape") return;
+      document.querySelectorAll(".finance-group-panel:not([hidden])").forEach(function (panel) {
+        panel.hidden = true;
+      });
+    });
+  });
+</script>
+{% endblock %}

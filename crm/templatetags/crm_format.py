@@ -25,3 +25,12 @@ def moeda_input(valor):
     except (InvalidOperation, TypeError, ValueError):
         numero = Decimal("0")
     return f"{numero:.2f}".replace(".", ",")
+
+
+@register.filter
+def decimal_attr(valor):
+    try:
+        numero = Decimal(valor or 0)
+    except (InvalidOperation, TypeError, ValueError):
+        numero = Decimal("0")
+    return f"{numero:.2f}"

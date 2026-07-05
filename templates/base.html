@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ crm_brand_titulo }}</title>
   <link rel="icon" type="image/svg+xml" href="{% static 'crm/brand/favicon.svg' %}?v=20260601-jb-camera">
-  <link rel="stylesheet" href="{% static 'crm/styles.css' %}?v=20260618-mobile-fit">
+  <link rel="stylesheet" href="{% static 'crm/styles.css' %}?v=20260704-reports-period-fit">
   <script src="https://unpkg.com/lucide@latest" defer></script>
 </head>
 <body>
@@ -29,9 +29,12 @@
       {% else %}
         <a href="{% url 'dashboard' %}"><i data-lucide="layout-dashboard"></i>Painel</a>
         <a href="{% url 'financeiro' %}"><i data-lucide="wallet-cards"></i>Financeiro</a>
+        <a href="{% url 'receitas' %}"><i data-lucide="circle-dollar-sign"></i>Receitas</a>
         <a href="{% url 'despesas' %}"><i data-lucide="receipt-text"></i>Despesas</a>
         <a href="{% url 'pipeline' %}"><i data-lucide="kanban-square"></i>Pipeline</a>
         <a href="{% url 'eventos' %}"><i data-lucide="party-popper"></i>Eventos</a>
+        <a href="{% url 'edicao' %}"><i data-lucide="image-plus"></i>Edicao</a>
+        <a href="{% url 'album' %}"><i data-lucide="book-open"></i>Album</a>
         <a href="{% url 'relatorios' %}"><i data-lucide="chart-column"></i>Relatorios</a>
         <a href="{% url 'agenda' %}"><i data-lucide="calendar-days"></i>Agenda</a>
         <a href="{% url 'cobrancas' %}"><i data-lucide="badge-dollar-sign"></i>Cobrancas</a>

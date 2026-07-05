@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 {% load crm_format %}
 
-{% block page_title %}Despesas{% endblock %}
-{% block page_subtitle %}Custos separados por mes, categoria, vencimento, status e forma de pagamento.{% endblock %}
+{% block page_title %}Receitas{% endblock %}
+{% block page_subtitle %}Receitas separadas por mes, categoria, vencimento, status e forma de pagamento.{% endblock %}
 
 {% block content %}
 <style>
-  .finance-group-panel .expense-panel-head {
+  .finance-group-panel .revenue-panel-head {
     display: block !important;
     min-height: 62px;
     padding-right: 520px !important;
   }
 
-  .finance-group-panel .finance-category-filter {
+  .finance-group-panel .revenue-category-filter {
     position: absolute !important;
     top: 16px;
     right: 260px !important;
@@ -23,12 +23,12 @@
   }
 
   @media (max-width: 760px) {
-    .finance-group-panel .expense-panel-head {
+    .finance-group-panel .revenue-panel-head {
       min-height: 0;
       padding-right: 42px !important;
     }
 
-    .finance-group-panel .finance-category-filter {
+    .finance-group-panel .revenue-category-filter {
       position: static !important;
       width: 100%;
       max-width: none;
@@ -40,63 +40,62 @@
 <section class="toolbar">
   <form class="search" method="get">
     <select name="status">
-      <option value="">Todas as despesas</option>
+      <option value="">Todas as receitas</option>
       <option value="pago" {% if status == "pago" %}selected{% endif %}>Pago</option>
     </select>
     <button class="button ghost" type="submit"><i data-lucide="filter"></i>Filtrar</button>
   </form>
   <div class="toolbar-actions">
-    {% if grupos_despesas %}
-      {% with grupo=grupos_despesas.0 %}
+    {% if grupos_receitas %}
+      {% with grupo=grupos_receitas.0 %}
         <a
           class="button ghost"
-          href="{% url 'despesas_relatorio_pdf' grupo.chave.year grupo.chave.month %}{% if filter_query %}?{{ filter_query }}{% endif %}"
+          href="{% url 'receitas_relatorio_pdf' grupo.chave.year grupo.chave.month %}{% if filter_query %}?{{ filter_query }}{% endif %}"
           target="_blank"
           rel="noopener"
-          data-expense-report-link
+          data-revenue-report-link
         >
           <i data-lucide="file-down"></i>Relatorio PDF
         </a>
       {% endwith %}
     {% endif %}
-    <a class="button" href="{% url 'despesa_nova' %}"><i data-lucide="plus"></i>Nova despesa</a>
   </div>
 </section>
 
 <section class="finance-groups">
-  {% for grupo in grupos_despesas %}
+  {% for grupo in grupos_receitas %}
     <button
       class="panel finance-group-trigger"
       type="button"
-      data-expense-target="despesasMes{{ forloop.counter }}"
-      data-expense-report-url="{% url 'despesas_relatorio_pdf' grupo.chave.year grupo.chave.month %}{% if filter_query %}?{{ filter_query }}{% endif %}"
+      data-revenue-target="receitasMes{{ forloop.counter }}"
+      data-revenue-report-url="{% url 'receitas_relatorio_pdf' grupo.chave.year grupo.chave.month %}{% if filter_query %}?{{ filter_query }}{% endif %}"
     >
       <span>{{ grupo.titulo }}</span>
       <small>{{ grupo.descricao }} Total: {{ grupo.total_valor|brl }}</small>
       <strong>{{ grupo.total }}</strong>
     </button>
   {% empty %}
-    <section class="panel"><p class="empty">Nenhuma despesa cadastrada.</p></section>
+    <section class="panel"><p class="empty">Nenhuma receita cadastrada.</p></section>
   {% endfor %}
 </section>
 
 <section class="finance-group-popups">
-  {% for grupo in grupos_despesas %}
+  {% for grupo in grupos_receitas %}
     <article
       class="panel finance-group-panel"
-      id="despesasMes{{ forloop.counter }}"
-      data-expense-base-report-url="{% url 'despesas_relatorio_pdf' grupo.chave.year grupo.chave.month %}{% if filter_query %}?{{ filter_query }}{% endif %}"
+      id="receitasMes{{ forloop.counter }}"
+      data-revenue-base-report-url="{% url 'receitas_relatorio_pdf' grupo.chave.year grupo.chave.month %}{% if filter_query %}?{{ filter_query }}{% endif %}"
       hidden
     >
-      <button class="modal-close finance-group-close" type="button" data-expense-close aria-label="Fechar"><i data-lucide="x"></i></button>
-      <div class="panel-head expense-panel-head">
+      <button class="modal-close finance-group-close" type="button" data-revenue-close aria-label="Fechar"><i data-lucide="x"></i></button>
+      <div class="panel-head revenue-panel-head">
         <div>
           <h2>{{ grupo.titulo }}</h2>
-          <small data-expense-summary>{{ grupo.total }} despesa(s), {{ grupo.pagas }} paga(s), {{ grupo.pendentes }} pendente(s). Total: {{ grupo.total_valor|brl }}</small>
+          <small data-revenue-summary>{{ grupo.total }} receita(s), {{ grupo.pagas }} paga(s), {{ grupo.pendentes }} pendente(s). Total: {{ grupo.total_valor|brl }}</small>
         </div>
-        <label class="finance-category-filter">
+        <label class="revenue-category-filter">
           <span>Categoria</span>
-          <select data-expense-category-filter>
+          <select data-revenue-category-filter>
             <option value="">Todas as categorias</option>
             {% for item in grupo.categorias %}
               <option value="{{ item }}">{{ item }}</option>
@@ -110,32 +109,29 @@
             <tr>
               <th>Descricao</th>
               <th>Categoria</th>
+              <th>Origem</th>
               <th>Data</th>
               <th>Vencimento</th>
               <th>Pagamento</th>
               <th>Status</th>
               <th>Valor</th>
-              <th>Acoes</th>
             </tr>
           </thead>
           <tbody>
-            {% for despesa in grupo.despesas %}
-              <tr data-expense-row data-category="{{ despesa.categoria|default:'' }}" data-status="{{ despesa.status }}" data-value="{{ despesa.valor|decimal_attr }}">
-                <td><strong>{{ despesa.descricao }}</strong><br><small>{{ despesa.observacoes }}</small></td>
-                <td>{{ despesa.categoria|default:"Sem categoria" }}</td>
-                <td>{{ despesa.data|date:"d/m/Y" }}</td>
-                <td>{{ despesa.vencimento|date:"d/m/Y" }}</td>
-                <td>{{ despesa.get_forma_pagamento_display }}</td>
-                <td><span class="badge {{ despesa.status }}">{{ despesa.get_status_display }}</span></td>
-                <td>{{ despesa.valor|brl }}</td>
-                <td class="actions">
-                  <a class="icon-link" href="{% url 'despesa_editar' despesa.pk %}" title="Editar"><i data-lucide="pencil"></i></a>
-                  <a class="icon-link danger" href="{% url 'despesa_excluir' despesa.pk %}" title="Excluir"><i data-lucide="trash-2"></i></a>
-                </td>
+            {% for receita in grupo.receitas %}
+              <tr data-revenue-row data-category="{{ receita.categoria|default:'' }}" data-status="{{ receita.status }}" data-value="{{ receita.valor|decimal_attr }}">
+                <td><strong>{{ receita.descricao }}</strong></td>
+                <td>{{ receita.categoria|default:"Sem categoria" }}</td>
+                <td>{{ receita.detalhe }}</td>
+                <td>{{ receita.data|date:"d/m/Y" }}</td>
+                <td>{{ receita.vencimento|date:"d/m/Y" }}</td>
+                <td>{{ receita.forma_pagamento }}</td>
+                <td><span class="badge {{ receita.status }}">{{ receita.status_label }}</span></td>
+                <td>{{ receita.valor|brl }}</td>
               </tr>
             {% endfor %}
-            <tr data-expense-empty-row hidden>
-              <td colspan="8"><p class="empty">Nenhuma despesa nesta categoria.</p></td>
+            <tr data-revenue-empty-row hidden>
+              <td colspan="8"><p class="empty">Nenhuma receita nesta categoria.</p></td>
             </tr>
           </tbody>
         </table>
@@ -160,11 +156,13 @@
       return url + separator + "categoria=" + encodeURIComponent(category);
     }
 
+    const reportLink = document.querySelector("[data-revenue-report-link]");
+
     function updatePanel(panel) {
-      const category = panel.querySelector("[data-expense-category-filter]").value;
-      const rows = panel.querySelectorAll("[data-expense-row]");
-      const emptyRow = panel.querySelector("[data-expense-empty-row]");
-      const summary = panel.querySelector("[data-expense-summary]");
+      const category = panel.querySelector("[data-revenue-category-filter]").value;
+      const rows = panel.querySelectorAll("[data-revenue-row]");
+      const emptyRow = panel.querySelector("[data-revenue-empty-row]");
+      const summary = panel.querySelector("[data-revenue-summary]");
       let total = 0;
       let count = 0;
       let paid = 0;
@@ -179,15 +177,13 @@
       });
 
       emptyRow.hidden = count > 0;
-      summary.textContent = count + " despesa(s), " + paid + " paga(s), " + (count - paid) + " pendente(s). Total: " + formatBRL(total);
-      if (reportLink) reportLink.href = appendCategory(panel.dataset.expenseBaseReportUrl, category);
+      summary.textContent = count + " receita(s), " + paid + " paga(s), " + (count - paid) + " pendente(s). Total: " + formatBRL(total);
+      if (reportLink) reportLink.href = appendCategory(panel.dataset.revenueBaseReportUrl, category);
     }
 
-    const reportLink = document.querySelector("[data-expense-report-link]");
-
-    document.querySelectorAll("[data-expense-target]").forEach(function (button) {
+    document.querySelectorAll("[data-revenue-target]").forEach(function (button) {
       button.addEventListener("click", function () {
-        const panel = document.getElementById(button.dataset.expenseTarget);
+        const panel = document.getElementById(button.dataset.revenueTarget);
         document.querySelectorAll(".finance-group-panel").forEach(function (item) {
           item.hidden = item !== panel || !item.hidden;
         });
@@ -198,13 +194,13 @@
       });
     });
 
-    document.querySelectorAll("[data-expense-category-filter]").forEach(function (select) {
+    document.querySelectorAll("[data-revenue-category-filter]").forEach(function (select) {
       select.addEventListener("change", function () {
         updatePanel(select.closest(".finance-group-panel"));
       });
     });
 
-    document.querySelectorAll("[data-expense-close]").forEach(function (button) {
+    document.querySelectorAll("[data-revenue-close]").forEach(function (button) {
       button.addEventListener("click", function () {
         button.closest(".finance-group-panel").hidden = true;
       });

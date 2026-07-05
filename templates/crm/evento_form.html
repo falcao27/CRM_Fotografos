@@ -111,6 +111,16 @@
             <span>{{ form.em_buffet.label }}</span>
             {% for error in form.em_buffet.errors %}<em>{{ error }}</em>{% endfor %}
           </label>
+          <label class="toggle-line">
+            {{ form.tem_album }}
+            <span>{{ form.tem_album.label }}</span>
+            {% for error in form.tem_album.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label class="conditional-field" data-field="album-tipo">
+            <span>{{ form.album_tipo.label }}</span>
+            {{ form.album_tipo }}
+            {% for error in form.album_tipo.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
         </div>
       </fieldset>
 
@@ -298,6 +308,8 @@
     const formaPagamento = document.getElementById("id_forma_pagamento");
     const parcelas = document.querySelector('[data-field="quantidade-parcelas"]');
     const primeiraParcela = document.querySelector('[data-field="primeira-parcela"]');
+    const temAlbum = document.getElementById("id_tem_album");
+    const albumTipo = document.querySelector('[data-field="album-tipo"]');
     const quantidadeParcelas = document.getElementById("id_quantidade_parcelas");
     const valorTotal = document.getElementById("id_valor_cobrado");
     const vencimentoInicial = document.getElementById("id_primeira_parcela");
@@ -445,6 +457,16 @@
       sincronizarLinhasParcelas();
     }
 
+    function alternarAlbumTipo() {
+      if (!temAlbum || !albumTipo) return;
+      const exibir = temAlbum.checked;
+      albumTipo.classList.toggle("is-hidden", !exibir);
+      const campo = albumTipo.querySelector("input, select, textarea");
+      if (!campo) return;
+      campo.required = exibir;
+      if (!exibir) campo.value = "";
+    }
+
     function atualizarPreview() {
       const valorTotal = numeroMoeda(valor("id_valor_cobrado"));
       const valorAdiantamento = numeroMoeda(valor("id_adiantamento"));
@@ -486,12 +508,14 @@
     }
 
     alternarParcelas();
+    alternarAlbumTipo();
     atualizarPreview();
     if (nome) nome.addEventListener("change", function () {
       preencherContato();
       atualizarPreview();
     });
     if (formaPagamento) formaPagamento.addEventListener("change", alternarParcelas);
+    if (temAlbum) temAlbum.addEventListener("change", alternarAlbumTipo);
     if (quantidadeParcelas) quantidadeParcelas.addEventListener("input", sincronizarLinhasParcelas);
     if (valorTotal) valorTotal.addEventListener("change", sincronizarLinhasParcelas);
     if (vencimentoInicial) vencimentoInicial.addEventListener("change", sincronizarLinhasParcelas);

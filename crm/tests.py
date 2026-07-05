@@ -1,4 +1,5 @@
 from calendar import monthrange
+from datetime import date
 from importlib import import_module
 from io import BytesIO
 from decimal import Decimal
@@ -66,7 +67,26 @@ class EventoDocumentoFlowTests(TestCase):
         self.assertContains(response, "parcela_vencimento")
         self.assertContains(response, "id_valor_restante_contrato")
         self.assertContains(response, 'name="valor_cobrado"')
+        self.assertContains(response, 'name="tem_album"')
+        self.assertContains(response, 'name="album_tipo"')
         self.assertNotContains(response, 'name="valor_cobrado" value="0,00"')
+
+    def test_formulario_evento_salva_tipo_album_e_data_limite(self):
+        dados = self.dados_evento()
+        dados.update(
+            {
+                "tem_album": "on",
+                "album_tipo": "Linha Premium",
+            }
+        )
+
+        response = self.client.post(reverse("evento_novo"), dados)
+
+        evento = Evento.objects.get(nome="Maria Silva")
+        self.assertRedirects(response, reverse("eventos"))
+        self.assertTrue(evento.tem_album)
+        self.assertEqual(evento.album_tipo, "Linha Premium")
+        self.assertEqual(evento.album_data_recebimento, date(2027, 7, 10))
 
     def test_evento_vindo_de_lead_fechado_mostra_valor_fechado(self):
         oportunidade = Oportunidade.objects.create(
@@ -102,6 +122,125 @@ class EventoDocumentoFlowTests(TestCase):
 
         cliente_listado = response.context["clientes"].get(pk=cliente.pk)
         self.assertEqual(cliente_listado.total_vendas, 1)
+
+    def test_painel_edicao_usa_dia_seguinte_ao_evento(self):
+        cliente = Cliente.objects.create(nome="Cliente Edicao")
+        evento = Evento.objects.create(
+            cliente=cliente,
+            nome="Cliente Edicao",
+            tipo_evento="aniversario",
+            data_festa="2026-07-04",
+            local_evento="Buffet Central",
+            contato="85999990000",
+        )
+
+        response = self.client.get(reverse("edicao"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Edicao")
+        self.assertContains(response, "Julho 2026")
+        self.assertContains(response, "Cliente Edicao")
+        self.assertContains(response, "05/07/2026")
+        self.assertContains(response, "Data da edicao")
+        self.assertContains(response, "Status")
+        self.assertContains(response, reverse("edicao_evento_editar", args=[evento.pk]))
+        self.assertContains(response, "Buscar cliente, contato ou pais")
+
+    def test_formulario_edicao_salva_dados_operacionais(self):
+        evento = Evento.objects.create(
+            nome="Cliente Edicao Form",
+            tipo_evento="aniversario",
+            data_festa="2026-07-04",
+            contato="85999990000",
+            aniversariante="Ana",
+        )
+
+        response = self.client.post(
+            reverse("edicao_evento_editar", args=[evento.pk]),
+            {
+                "edicao_data": "2026-07-06",
+                "edicao_cliente_pais": "Pais da Ana",
+                "edicao_contato": "8511111111",
+                "edicao_aniversariantes": "Ana",
+                "edicao_tipo_servico": "Aniversario",
+                "edicao_backup": "on",
+                "edicao_selecao": "on",
+                "edicao_editado": "on",
+                "edicao_data_entrega": "2026-07-20",
+                "edicao_status": "finalizado",
+            },
+        )
+
+        evento.refresh_from_db()
+        self.assertRedirects(response, reverse("edicao"))
+        self.assertEqual(evento.edicao_cliente_pais, "Pais da Ana")
+        self.assertEqual(evento.edicao_status, "finalizado")
+        self.assertTrue(evento.edicao_backup)
+        self.assertTrue(evento.edicao_selecao)
+        self.assertTrue(evento.edicao_editado)
+
+    def test_painel_album_mostra_apenas_eventos_com_album(self):
+        cliente = Cliente.objects.create(nome="Cliente Album")
+        evento = Evento.objects.create(
+            cliente=cliente,
+            nome="Cliente Album",
+            tipo_evento="aniversario",
+            data_festa="2026-07-04",
+            tem_album=True,
+            album_tipo="Premium",
+            album_data_envio="2026-07-10",
+            album_data_recebimento="2026-07-20",
+            contato="85999990000",
+        )
+        Evento.objects.create(
+            cliente=cliente,
+            nome="Cliente Sem Album",
+            tipo_evento="aniversario",
+            data_festa="2026-07-05",
+            tem_album=False,
+        )
+
+        response = self.client.get(reverse("album"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Album")
+        self.assertContains(response, "Cliente Album")
+        self.assertContains(response, "Tipo de Album")
+        self.assertContains(response, "Data Final para recebimento de Fotos do Album")
+        self.assertContains(response, "Data de Envio")
+        self.assertContains(response, "Premium")
+        self.assertContains(response, "10/07/2026")
+        self.assertContains(response, "20/07/2026")
+        self.assertContains(response, "wa.me")
+        self.assertContains(response, "Enviar lembrete mensal pelo WhatsApp")
+        self.assertContains(response, reverse("album_evento_editar", args=[evento.pk]))
+        self.assertNotContains(response, "Cliente Sem Album")
+
+    def test_formulario_album_salva_dados_do_cabecario(self):
+        evento = Evento.objects.create(
+            nome="Cliente Album Form",
+            tipo_evento="aniversario",
+            data_festa="2026-07-04",
+            tem_album=True,
+        )
+
+        response = self.client.post(
+            reverse("album_evento_editar", args=[evento.pk]),
+            {
+                "nome": "Cliente Album Atualizado",
+                "tipo_evento": "aniversario",
+                "album_tipo": "Linha Premium",
+                "album_data_envio": "2026-07-12",
+                "album_data_recebimento": "2026-07-30",
+                "album_status": "finalizado",
+            },
+        )
+
+        evento.refresh_from_db()
+        self.assertRedirects(response, reverse("album"))
+        self.assertEqual(evento.nome, "Cliente Album Atualizado")
+        self.assertEqual(evento.album_tipo, "Linha Premium")
+        self.assertEqual(evento.album_status, "finalizado")
 
     def test_contrato_usa_informacoes_preenchidas_no_evento(self):
         dados = self.dados_evento()
@@ -482,18 +621,20 @@ class DespesasTests(TestCase):
         self.assertEqual([despesa.descricao for despesa in despesas], ["Paga"])
         self.assertContains(response, 'option value="pago" selected')
 
-    def test_despesas_filtra_por_categoria(self):
+    def test_despesas_exibe_categorias_dentro_do_mes(self):
         Despesa.objects.create(descricao="Aluguel", categoria="Fixo", valor="500.00", data="2026-05-05")
         Despesa.objects.create(descricao="Album", categoria="Produto", valor="300.00", data="2026-05-06")
 
-        response = self.client.get(reverse("despesas"), {"categoria": "Produto"})
+        response = self.client.get(reverse("despesas"))
 
         grupos = response.context["grupos_despesas"]
-        despesas = [despesa for grupo in grupos for despesa in grupo["despesas"]]
-        self.assertEqual([despesa.descricao for despesa in despesas], ["Album"])
+        self.assertEqual(grupos[0]["categorias"], ["Fixo", "Produto"])
+        self.assertEqual(grupos[0]["total_valor"], Decimal("800.00"))
         self.assertContains(response, "Todas as categorias")
-        self.assertContains(response, 'option value="Produto" selected')
-        self.assertContains(response, "?categoria=Produto")
+        self.assertContains(response, 'data-expense-category-filter')
+        self.assertContains(response, 'data-expense-summary')
+        self.assertContains(response, 'data-value="300.00"')
+        self.assertNotContains(response, 'select name="categoria"')
 
     def test_relatorio_pdf_despesas_filtra_categoria_e_pagas(self):
         Despesa.objects.create(
@@ -613,6 +754,69 @@ class FinanceiroReceitasTests(TestCase):
             status="pendente",
         )
         return venda, parcela
+
+    def test_painel_receitas_agrupa_parcelas_do_financeiro_por_mes(self):
+        venda, parcela = self.criar_venda_com_parcela()
+        Parcela.objects.create(
+            venda=venda,
+            numero=2,
+            valor="200.00",
+            valor_recebido="200.00",
+            vencimento="2026-07-01",
+            data_pagamento="2026-07-02",
+            status="pago",
+        )
+
+        response = self.client.get(reverse("receitas"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Receitas")
+        self.assertContains(response, "Receitas separadas por mes")
+        self.assertContains(response, "Todas as receitas")
+        self.assertContains(response, "Relatorio PDF")
+        self.assertContains(response, "Junho 2026")
+        self.assertContains(response, "Julho 2026")
+        self.assertContains(response, "Cliente Parcial - Aniversario")
+        self.assertContains(response, "Aniversario")
+        self.assertContains(response, "R$ 200,00")
+        self.assertContains(response, 'href="/receitas/')
+
+    def test_painel_receitas_filtra_apenas_pagas(self):
+        venda, _parcela = self.criar_venda_com_parcela()
+        Parcela.objects.create(
+            venda=venda,
+            numero=2,
+            valor="200.00",
+            valor_recebido="200.00",
+            vencimento="2026-07-01",
+            data_pagamento="2026-07-02",
+            status="pago",
+        )
+
+        response = self.client.get(reverse("receitas"), {"status": "pago"})
+
+        grupos = response.context["grupos_receitas"]
+        receitas = [receita for grupo in grupos for receita in grupo["receitas"]]
+        self.assertEqual([receita.status for receita in receitas], ["pago"])
+        self.assertContains(response, 'option value="pago" selected')
+
+    def test_relatorio_pdf_receitas_mes(self):
+        venda, _parcela = self.criar_venda_com_parcela()
+        Parcela.objects.create(
+            venda=venda,
+            numero=2,
+            valor="200.00",
+            valor_recebido="200.00",
+            vencimento="2026-07-01",
+            data_pagamento="2026-07-02",
+            status="pago",
+        )
+
+        response = self.client.get(reverse("receitas_relatorio_pdf", args=[2026, 7]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn(b"Cliente Parci", response.content)
 
     def test_baixa_parcial_mantem_valor_contratado_e_saldo_aberto(self):
         venda, parcela = self.criar_venda_com_parcela()
@@ -1033,9 +1237,9 @@ class FinanceiroReceitasTests(TestCase):
             quantidade_parcelas=3,
             data_festa="2026-08-15",
         )
-        Parcela.objects.create(venda=venda, numero=1, valor="400.00", vencimento="2026-07-03", status="pendente")
-        Parcela.objects.create(venda=venda, numero=2, valor="200.00", vencimento="2026-08-03", status="pendente")
-        Parcela.objects.create(venda=venda, numero=3, valor="200.00", vencimento="2026-09-03", status="pendente")
+        Parcela.objects.create(venda=venda, numero=1, valor="400.00", vencimento="2030-07-03", status="pendente")
+        Parcela.objects.create(venda=venda, numero=2, valor="200.00", vencimento="2030-08-03", status="pendente")
+        Parcela.objects.create(venda=venda, numero=3, valor="200.00", vencimento="2030-09-03", status="pendente")
 
         response = self.client.get(reverse("financeiro"))
 
@@ -1117,3 +1321,63 @@ class FinanceiroReceitasTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Adiantamento", response.content)
         self.assertIn(b"200,00", response.content)
+
+    def test_painel_relatorios_filtra_periodo_unico(self):
+        cliente = Cliente.objects.create(nome="Cliente Periodo")
+        venda_julho = Venda.objects.create(
+            cliente=cliente,
+            titulo="Venda Julho",
+            data_venda="2026-07-10",
+            valor_total="500.00",
+            status="pendente",
+        )
+        Evento.objects.create(
+            cliente=cliente,
+            venda=venda_julho,
+            nome="Evento Julho",
+            tipo_evento="aniversario",
+            valor_cobrado="500.00",
+        )
+        Parcela.objects.create(
+            venda=venda_julho,
+            numero=1,
+            valor="500.00",
+            valor_recebido="500.00",
+            vencimento="2026-07-10",
+            data_pagamento="2026-07-11",
+            status="pago",
+        )
+        Despesa.objects.create(descricao="Despesa Julho", categoria="Fixo", valor="150.00", data="2026-07-12")
+        venda_agosto = Venda.objects.create(
+            cliente=cliente,
+            titulo="Venda Agosto",
+            data_venda="2026-08-10",
+            valor_total="700.00",
+            status="pendente",
+        )
+        Evento.objects.create(
+            cliente=cliente,
+            venda=venda_agosto,
+            nome="Evento Agosto",
+            tipo_evento="aniversario",
+            valor_cobrado="700.00",
+        )
+        Parcela.objects.create(
+            venda=venda_agosto,
+            numero=1,
+            valor="700.00",
+            valor_recebido="700.00",
+            vencimento="2026-08-10",
+            data_pagamento="2026-08-11",
+            status="pago",
+        )
+
+        response = self.client.get(reverse("relatorios"), {"inicio": "2026-07-01", "fim": "2026-07-31"})
+
+        self.assertEqual(response.context["receita_mes"], Decimal("500.00"))
+        self.assertEqual(response.context["despesa_mes"], Decimal("150.00"))
+        self.assertContains(response, 'name="inicio" value="2026-07-01"')
+        self.assertContains(response, 'name="fim" value="2026-07-31"')
+        self.assertContains(response, "/relatorios/receitas/pdf/?inicio=2026-07-01&fim=2026-07-31")
+        self.assertContains(response, "Venda Julho")
+        self.assertNotContains(response, "Venda Agosto")

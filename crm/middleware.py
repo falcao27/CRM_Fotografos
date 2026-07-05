@@ -29,7 +29,11 @@ class JWTCookieAuthenticationMiddleware:
         if isinstance(getattr(request, "user", None), AnonymousUser):
             token_data = validar_token(request.COOKIES.get(JWT_COOKIE_NAME, ""))
             if token_data:
-                user = User.objects.filter(pk=token_data.get("sub"), is_active=True).first()
+                user = (
+                    User.objects.select_related("perfil_crm", "perfil_crm__empresa")
+                    .filter(pk=token_data.get("sub"), is_active=True)
+                    .first()
+                )
                 if user:
                     request.user = user
         return self.get_response(request)
@@ -53,8 +57,21 @@ class CRMRouteProtectionMiddleware:
         return self.get_response(request)
 
     def _registrar_acesso(self, request):
-        perfil, _ = PerfilUsuario.objects.get_or_create(user=request.user)
         agora = timezone.now()
+        ultimo_ping = request.session.get("crm_access_ping_at")
+        if ultimo_ping and agora.timestamp() - ultimo_ping < 60:
+            return
+        request.session["crm_access_ping_at"] = int(agora.timestamp())
+
+        try:
+            perfil = request.user.perfil_crm
+        except PerfilUsuario.DoesNotExist:
+            perfil = None
+
+        if perfil is None:
+            perfil, _ = PerfilUsuario.objects.select_related("empresa").get_or_create(user=request.user)
+            request.user._state.fields_cache["perfil_crm"] = perfil
+
         perfil.ultimo_acesso = agora
         perfil.online_ate = agora + timedelta(minutes=5)
         perfil.save(update_fields=["ultimo_acesso", "online_ate"])

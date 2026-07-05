@@ -305,6 +305,8 @@ class Parcela(models.Model):
 
     @property
     def saldo_pago_anterior(self):
+        if hasattr(self, "_saldo_pago_anterior_cache"):
+            return self._saldo_pago_anterior_cache
         if not self.venda_id:
             return Decimal("0.00")
         parcelas_anteriores = self.venda.parcelas.filter(
@@ -468,6 +470,14 @@ class Evento(models.Model):
         ("pet", "Pet"),
         ("outro", "Outro"),
     ]
+    EDICAO_STATUS_CHOICES = [
+        ("pendente", "Pendente"),
+        ("finalizado", "Finalizado"),
+    ]
+    ALBUM_STATUS_CHOICES = [
+        ("pendente", "Pendente"),
+        ("finalizado", "Finalizado"),
+    ]
 
     empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, null=True, blank=True, related_name="eventos")
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, related_name="eventos")
@@ -484,6 +494,21 @@ class Evento(models.Model):
     idade = models.CharField(max_length=30, blank=True)
     local_evento = models.CharField(max_length=180, blank=True)
     em_buffet = models.BooleanField(default=False)
+    tem_album = models.BooleanField(default=False)
+    edicao_data = models.DateField(null=True, blank=True)
+    edicao_cliente_pais = models.CharField(max_length=160, blank=True)
+    edicao_contato = models.CharField(max_length=80, blank=True)
+    edicao_aniversariantes = models.CharField(max_length=160, blank=True)
+    edicao_tipo_servico = models.CharField(max_length=160, blank=True)
+    edicao_backup = models.BooleanField(default=False)
+    edicao_selecao = models.BooleanField(default=False)
+    edicao_editado = models.BooleanField(default=False)
+    edicao_data_entrega = models.DateField(null=True, blank=True)
+    edicao_status = models.CharField(max_length=20, choices=EDICAO_STATUS_CHOICES, default="pendente")
+    album_tipo = models.CharField(max_length=160, blank=True)
+    album_data_envio = models.DateField(null=True, blank=True)
+    album_data_recebimento = models.DateField(null=True, blank=True)
+    album_status = models.CharField(max_length=20, choices=ALBUM_STATUS_CHOICES, default="pendente")
     descricao_servico = models.TextField(blank=True)
     valor_cobrado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     forma_pagamento = models.CharField(max_length=20, choices=Venda.FORMA_CHOICES, default="pix")

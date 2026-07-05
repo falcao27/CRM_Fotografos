@@ -5,10 +5,17 @@
 {% block page_subtitle %}Acompanhe os principais numeros do CRM.{% endblock %}
 
 {% block content %}
-<section class="month-line report-period">
-  <i data-lucide="calendar"></i>
-  <strong>Periodo</strong>
-  <span>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</span>
+<section class="panel report-period-panel">
+  <div class="month-line report-period">
+    <i data-lucide="calendar"></i>
+    <strong>Periodo</strong>
+    <span>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</span>
+  </div>
+  <form class="report-period-form" method="get" data-report-period-form>
+    <label><span>Inicio</span><input type="date" name="inicio" value="{{ periodo_inicio }}" data-report-period-input></label>
+    <label><span>Fim</span><input type="date" name="fim" value="{{ periodo_fim }}" data-report-period-input></label>
+    <button class="button compact-button" type="submit"><i data-lucide="filter"></i>Filtrar</button>
+  </form>
 </section>
 
 <section class="report-card-grid">
@@ -16,31 +23,19 @@
     <span class="card-title">Receita do Mes</span>
     <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
     <strong>{{ receita_mes|brl }}</strong>
-    <form class="report-card-form" method="get" action="{% url 'relatorios_pdf' 'receitas' %}" target="_blank">
-      <label><span>Inicio</span><input type="date" name="inicio" value="{{ periodo_inicio }}"></label>
-      <label><span>Fim</span><input type="date" name="fim" value="{{ periodo_fim }}"></label>
-      <button class="button compact-button" type="submit"><i data-lucide="file-text"></i>PDF</button>
-    </form>
+    <a class="button compact-button report-pdf-link" href="{% url 'relatorios_pdf' 'receitas' %}?inicio={{ periodo_inicio }}&fim={{ periodo_fim }}" target="_blank" rel="noopener"><i data-lucide="file-text"></i>PDF</a>
   </article>
   <article class="panel report-card">
     <span class="card-title">Despesas do Mes</span>
     <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
     <strong>{{ despesa_mes|brl }}</strong>
-    <form class="report-card-form" method="get" action="{% url 'relatorios_pdf' 'despesas' %}" target="_blank">
-      <label><span>Inicio</span><input type="date" name="inicio" value="{{ periodo_inicio }}"></label>
-      <label><span>Fim</span><input type="date" name="fim" value="{{ periodo_fim }}"></label>
-      <button class="button compact-button" type="submit"><i data-lucide="file-text"></i>PDF</button>
-    </form>
+    <a class="button compact-button report-pdf-link" href="{% url 'relatorios_pdf' 'despesas' %}?inicio={{ periodo_inicio }}&fim={{ periodo_fim }}" target="_blank" rel="noopener"><i data-lucide="file-text"></i>PDF</a>
   </article>
   <article class="panel report-card">
     <span class="card-title">Eventos no Mes</span>
     <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
     <strong>{{ eventos_mes }}</strong>
-    <form class="report-card-form" method="get" action="{% url 'relatorios_pdf' 'eventos' %}" target="_blank">
-      <label><span>Inicio</span><input type="date" name="inicio" value="{{ periodo_inicio }}"></label>
-      <label><span>Fim</span><input type="date" name="fim" value="{{ periodo_fim }}"></label>
-      <button class="button compact-button" type="submit"><i data-lucide="file-text"></i>PDF</button>
-    </form>
+    <a class="button compact-button report-pdf-link" href="{% url 'relatorios_pdf' 'eventos' %}?inicio={{ periodo_inicio }}&fim={{ periodo_fim }}" target="_blank" rel="noopener"><i data-lucide="file-text"></i>PDF</a>
   </article>
 </section>
 
@@ -49,22 +44,14 @@
     <span class="card-title">Vendas recentes</span>
     <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
     <strong>{{ vendas_recentes|length }}</strong>
-    <form class="report-card-form" method="get" action="{% url 'relatorios_pdf' 'vendas' %}" target="_blank">
-      <label><span>Inicio</span><input type="date" name="inicio" value="{{ periodo_inicio }}"></label>
-      <label><span>Fim</span><input type="date" name="fim" value="{{ periodo_fim }}"></label>
-      <button class="button compact-button" type="submit"><i data-lucide="file-text"></i>PDF</button>
-    </form>
+    <a class="button compact-button report-pdf-link" href="{% url 'relatorios_pdf' 'vendas' %}?inicio={{ periodo_inicio }}&fim={{ periodo_fim }}" target="_blank" rel="noopener"><i data-lucide="file-text"></i>PDF</a>
     <button class="button ghost report-detail-button report-trigger" type="button" data-report-target="vendasRecentesPainel"><i data-lucide="list"></i>Ver detalhes</button>
   </article>
   <article class="panel report-card">
     <span class="card-title">Eventos recentes</span>
     <small>{{ inicio_mes|date:"d/m/Y" }} ate {{ fim_mes|date:"d/m/Y" }}</small>
     <strong>{{ eventos_recentes|length }}</strong>
-    <form class="report-card-form" method="get" action="{% url 'relatorios_pdf' 'eventos-recentes' %}" target="_blank">
-      <label><span>Inicio</span><input type="date" name="inicio" value="{{ periodo_inicio }}"></label>
-      <label><span>Fim</span><input type="date" name="fim" value="{{ periodo_fim }}"></label>
-      <button class="button compact-button" type="submit"><i data-lucide="file-text"></i>PDF</button>
-    </form>
+    <a class="button compact-button report-pdf-link" href="{% url 'relatorios_pdf' 'eventos-recentes' %}?inicio={{ periodo_inicio }}&fim={{ periodo_fim }}" target="_blank" rel="noopener"><i data-lucide="file-text"></i>PDF</a>
     <button class="button ghost report-detail-button report-trigger" type="button" data-report-target="eventosRecentesPainel"><i data-lucide="list"></i>Ver detalhes</button>
   </article>
 </section>
@@ -110,6 +97,15 @@
 
 <script>
   window.addEventListener("DOMContentLoaded", function () {
+    var periodForm = document.querySelector("[data-report-period-form]");
+    if (periodForm) {
+      document.querySelectorAll("[data-report-period-input]").forEach(function (input) {
+        input.addEventListener("change", function () {
+          periodForm.requestSubmit();
+        });
+      });
+    }
+
     document.querySelectorAll("[data-report-target]").forEach(function (button) {
       button.addEventListener("click", function () {
         var panel = document.getElementById(button.dataset.reportTarget);

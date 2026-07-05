@@ -685,7 +685,50 @@ h2 {
 }
 
 .report-period {
-  margin-bottom: 16px;
+  margin: 0;
+}
+
+.report-period-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(420px, 520px);
+  align-items: end;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.report-period-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 94px;
+  gap: 10px;
+  align-items: end;
+  width: 100%;
+  min-width: 0;
+}
+
+.report-period-form label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.report-period-form input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+}
+
+.report-period-form .button {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
 }
 
 .report-card {
@@ -757,6 +800,13 @@ h2 {
   background: #fff;
   color: var(--text);
   font: inherit;
+}
+
+.report-pdf-link {
+  grid-column: 1 / -1;
+  width: fit-content;
+  min-height: 36px;
+  padding: 8px 12px;
 }
 
 .report-detail-button {
@@ -965,7 +1015,8 @@ th {
 .badge.vencido { background: #ffe1df; color: #9f2920; }
 .badge.cancelado { background: #e3e5e8; color: #535d63; }
 .badge.concluida,
-.badge.assinado { background: #dff5e8; color: #14643c; }
+.badge.assinado,
+.badge.finalizado { background: #dff5e8; color: #14643c; }
 .badge.enviado { background: #e4f0ff; color: #1b5eb7; }
 .badge.rascunho { background: #e3e5e8; color: #535d63; }
 
@@ -1207,6 +1258,38 @@ input[type="checkbox"] {
 
 .finance-group-panel h2 {
   margin: 0 48px 16px 0;
+}
+
+.expense-panel-head {
+  display: block;
+  min-height: 62px;
+  padding-right: 490px;
+}
+
+.expense-panel-head > div:first-child {
+  min-width: 0;
+}
+
+.finance-category-filter {
+  position: absolute;
+  top: 16px;
+  right: 250px;
+  display: grid;
+  gap: 6px;
+  width: 220px;
+  max-width: 220px;
+}
+
+.finance-category-filter span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.finance-category-filter select {
+  width: 100%;
+  min-width: 0;
 }
 
 .finance-group-search {
@@ -3237,6 +3320,19 @@ input[readonly] {
     flex-direction: column;
   }
 
+  .expense-panel-head {
+    min-height: 0;
+    padding-right: 42px;
+  }
+
+  .finance-category-filter {
+    position: static;
+    width: 100%;
+    max-width: none;
+    margin-top: 12px;
+    margin-left: 0;
+  }
+
   .panel-head .button,
   .panel-head .icon-link {
     width: 100%;
@@ -3483,6 +3579,17 @@ input[readonly] {
     gap: 10px;
   }
 
+  .report-period-panel {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .report-period-form {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 94px;
+    min-width: 0;
+    width: 100%;
+  }
+
   .report-card strong,
   .finance-group-trigger strong {
     font-size: clamp(30px, 10vw, 42px);
@@ -3491,6 +3598,11 @@ input[readonly] {
   .report-card-form,
   .access-filter > div {
     grid-template-columns: 1fr;
+  }
+
+  .report-pdf-link,
+  .report-detail-button {
+    width: 100%;
   }
 
   .payment-summary-values {
@@ -3535,6 +3647,10 @@ input[readonly] {
   .money-card strong,
   .metric strong {
     font-size: clamp(20px, 7vw, 24px);
+  }
+
+  .report-period-form {
+    grid-template-columns: 1fr;
   }
 
   .metric {

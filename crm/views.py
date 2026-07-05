@@ -9,6 +9,7 @@ from calendar import Calendar, monthrange
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from html import escape
+from types import SimpleNamespace
 from urllib.parse import quote, urlencode
 from xml.etree import ElementTree as ET
 
@@ -28,11 +29,13 @@ from django.utils import timezone
 
 from .forms import (
     AdminCompromissoForm,
+    AlbumEventoForm,
     ClienteForm,
     calcular_proxima_oportunidade,
     ContratoAdminEmpresaForm,
     DespesaForm,
     DocumentoForm,
+    EdicaoEventoForm,
     EmpresaAdminForm,
     EventoForm,
     OportunidadeForm,
@@ -127,6 +130,23 @@ def link_whatsapp_parcelas(cliente, parcelas, tipo):
             f"Valor total: {formatar_moeda_whatsapp(total)}.\n"
             "O vencimento e a data cadastrada no pagamento. Qualquer duvida, estou a disposicao."
         )
+    return f"https://wa.me/{numero}?text={quote(mensagem)}"
+
+
+def link_whatsapp_album(evento):
+    numero = normalizar_whatsapp(evento.contato or (evento.cliente.telefone if evento.cliente else ""))
+    if not numero:
+        return ""
+
+    data_limite = evento.album_data_recebimento or (add_months(evento.data_festa, 12) if evento.data_festa else None)
+    data_texto = f"{data_limite:%d/%m/%Y}" if data_limite else "a data combinada"
+    tipo_album = f" ({evento.album_tipo})" if evento.album_tipo else ""
+    mensagem = (
+        f"Ola, {evento.nome}.\n\n"
+        f"Passando para lembrar sobre o envio das fotos para o album{tipo_album}. "
+        f"A data final cadastrada para recebimento das fotos e {data_texto}.\n\n"
+        "Quando puder, envie as fotos escolhidas pelo WhatsApp para darmos continuidade ao album."
+    )
     return f"https://wa.me/{numero}?text={quote(mensagem)}"
 
 
@@ -427,6 +447,26 @@ def filtrar_parcelas_empresa(qs, request):
     if not empresa:
         return qs
     return qs.filter(venda__empresa=empresa)
+
+
+def preparar_saldos_parcelas(parcelas):
+    por_venda = {}
+    for parcela in parcelas:
+        por_venda.setdefault(parcela.venda_id, []).append(parcela)
+
+    for itens in por_venda.values():
+        total_contratado = Decimal("0.00")
+        total_recebido = Decimal("0.00")
+        anteriores_todos_pagos = True
+        for parcela in sorted(itens, key=lambda item: (item.vencimento, item.numero, item.id or 0)):
+            parcela._saldo_pago_anterior_cache = (
+                total_contratado - total_recebido if anteriores_todos_pagos else Decimal("0.00")
+            )
+            if parcela.status != "pago":
+                anteriores_todos_pagos = False
+            total_contratado += parcela.valor
+            total_recebido += parcela.valor_recebido_efetivo
+    return parcelas
 
 
 def atribuir_empresa(obj, request):
@@ -919,9 +959,12 @@ def dashboard(request):
     parcelas_eventos = filtrar_parcelas_empresa(
         Parcela.objects.filter(venda__evento__isnull=False).exclude(venda__status="cancelado"), request
     )
+    parcelas_eventos_lista = preparar_saldos_parcelas(
+        list(parcelas_eventos.select_related("venda").order_by("venda_id", "vencimento", "numero", "id"))
+    )
     eventos_com_adiantamento = filtrar_empresa(
         Evento.objects.filter(venda__isnull=False, adiantamento__gt=0, adiantamento_pago=True), request
-    ).exclude(venda__status="cancelado").exclude(venda__parcelas__numero=1, venda__parcelas__valor=F("adiantamento"))
+    ).exclude(venda__status="cancelado").exclude(venda__parcelas__numero=1, venda__parcelas__valor=F("adiantamento")).distinct()
     adiantamentos_mes = eventos_com_adiantamento.filter(venda__data_venda__range=(inicio_mes, fim_mes)).aggregate(
         total=Sum("adiantamento")
     )["total"] or 0
@@ -929,14 +972,17 @@ def dashboard(request):
         total=Sum("valor_recebido")
     )["total"] or 0
     receitas_recebidas += adiantamentos_mes
-    parcelas_a_receber_mes = parcelas_eventos.exclude(status="pago").filter(vencimento__range=(inicio_mes, fim_mes))
+    parcelas_a_receber_mes = [
+        parcela
+        for parcela in parcelas_eventos_lista
+        if parcela.status != "pago" and inicio_mes <= parcela.vencimento <= fim_mes
+    ]
     receitas_a_receber = sum((parcela.valor_em_aberto for parcela in parcelas_a_receber_mes), Decimal("0.00"))
     receitas_recebidas_todos = (parcelas_eventos.aggregate(total=Sum("valor_recebido"))["total"] or 0) + (
         eventos_com_adiantamento.aggregate(total=Sum("adiantamento"))["total"] or 0
     )
     receitas_a_receber_todos = sum(
-        (parcela.valor_em_aberto for parcela in parcelas_eventos.exclude(status="pago")),
-        Decimal("0.00"),
+        (parcela.valor_em_aberto for parcela in parcelas_eventos_lista if parcela.status != "pago"), Decimal("0.00")
     )
     receita_total_eventos = vendas_eventos.aggregate(total=Sum("valor_total"))["total"] or 0
     if filtro_receita == "todos":
@@ -981,7 +1027,9 @@ def dashboard(request):
     parcelas_alerta = parcelas_eventos.exclude(status="pago").filter(
         Q(vencimento__lt=hoje) | Q(lembrete_em__lte=hoje)
     )[:8]
-    recompra_alerta = [cliente for cliente in filtrar_empresa(Cliente.objects.all(), request) if cliente.precisa_alerta_recompra][:8]
+    recompra_alerta = filtrar_empresa(
+        Cliente.objects.filter(proxima_oportunidade__lte=hoje).order_by("proxima_oportunidade", "nome"), request
+    )[:8]
     ultimas_vendas = vendas_eventos.select_related("cliente").prefetch_related("parcelas")[:8]
     tarefas_semana = filtrar_empresa(Tarefa.objects.select_related("cliente").filter(data__range=(hoje, hoje + timedelta(days=7))), request)[:5]
     ultimos_lancamentos = list(filtrar_empresa(Despesa.objects.all(), request)[:4]) + list(vendas_eventos.select_related("cliente")[:4])
@@ -1171,6 +1219,178 @@ def financeiro(request):
     return render(request, "crm/financeiro.html", {"grupos_financeiros": grupos_financeiros})
 
 
+def categoria_receita_evento(venda):
+    evento = getattr(venda, "evento", None)
+    if evento and evento.tipo_evento:
+        return evento.get_tipo_evento_display()
+    return "Venda"
+
+
+def data_financeira_receita(item):
+    return item.data_pagamento or item.vencimento
+
+
+def receitas_itens(request):
+    parcelas = (
+        filtrar_parcelas_empresa(
+            Parcela.objects.select_related("venda", "venda__cliente", "venda__evento")
+            .filter(venda__evento__isnull=False)
+            .exclude(venda__status="cancelado"),
+            request,
+        )
+        .order_by("vencimento", "numero", "venda__cliente__nome")
+    )
+    itens = []
+    for parcela in preparar_saldos_parcelas(list(parcelas)):
+        valor_recebido = parcela.valor_recebido_efetivo
+        valor = valor_recebido if parcela.status == "pago" else parcela.valor_em_aberto
+        if valor <= Decimal("0.00"):
+            continue
+        venda = parcela.venda
+        cliente = venda.cliente
+        itens.append(
+            SimpleNamespace(
+                origem="parcela",
+                descricao=f"{cliente.nome} - {venda.titulo}",
+                categoria=categoria_receita_evento(venda),
+                data=venda.data_venda,
+                vencimento=parcela.vencimento,
+                data_pagamento=parcela.data_pagamento,
+                forma_pagamento=venda.get_forma_pagamento_display(),
+                status=parcela.status,
+                status_label=parcela.get_status_display(),
+                valor=valor,
+                detalhe=f"Parcela {parcela.numero}",
+            )
+        )
+
+    adiantamentos = (
+        filtrar_empresa(
+            Evento.objects.select_related("cliente", "venda")
+            .filter(venda__isnull=False, adiantamento__gt=0, adiantamento_pago=True)
+            .exclude(venda__status="cancelado"),
+            request,
+        )
+        .exclude(venda__parcelas__numero=1, venda__parcelas__valor=F("adiantamento"))
+        .distinct()
+        .order_by("venda__data_venda", "nome")
+    )
+    for evento in adiantamentos:
+        venda = evento.venda
+        cliente = evento.cliente or venda.cliente
+        itens.append(
+            SimpleNamespace(
+                origem="adiantamento",
+                descricao=f"{cliente.nome if cliente else evento.nome} - {venda.titulo}",
+                categoria=evento.get_tipo_evento_display() if evento.tipo_evento else "Venda",
+                data=venda.data_venda,
+                vencimento=venda.data_venda,
+                data_pagamento=venda.data_venda,
+                forma_pagamento=venda.get_forma_pagamento_display(),
+                status="pago",
+                status_label="Pago",
+                valor=evento.adiantamento,
+                detalhe="Adiantamento",
+            )
+        )
+    return itens
+
+
+def agrupar_receitas_por_mes(itens):
+    grupos_por_mes = {}
+    for item in sorted(itens, key=lambda receita: (data_financeira_receita(receita), receita.descricao)):
+        chave = data_financeira_receita(item).replace(day=1)
+        grupos_por_mes.setdefault(
+            chave,
+            {
+                "chave": chave,
+                "titulo": f"{MESES_PT[chave.month - 1]} {chave.year}",
+                "descricao": "Receitas por vencimento ou pagamento.",
+                "receitas": [],
+                "total_valor": Decimal("0.00"),
+                "pagas": 0,
+                "pendentes": 0,
+                "categorias": set(),
+            },
+        )
+        grupo = grupos_por_mes[chave]
+        grupo["receitas"].append(item)
+        grupo["total_valor"] += item.valor
+        if item.categoria:
+            grupo["categorias"].add(item.categoria)
+        if item.status == "pago":
+            grupo["pagas"] += 1
+        else:
+            grupo["pendentes"] += 1
+
+    grupos_receitas = []
+    for chave in sorted(grupos_por_mes):
+        grupo = grupos_por_mes[chave]
+        grupos_receitas.append({**grupo, "categorias": sorted(grupo["categorias"]), "total": len(grupo["receitas"])})
+    return grupos_receitas
+
+
+def receitas(request):
+    status = "pago" if request.GET.get("status") == "pago" else ""
+    itens = receitas_itens(request)
+    if status:
+        itens = [item for item in itens if item.status == status]
+
+    return render(
+        request,
+        "crm/receitas.html",
+        {
+            "grupos_receitas": agrupar_receitas_por_mes(itens),
+            "status": status,
+            "filter_query": urlencode({chave: valor for chave, valor in {"status": status}.items() if valor}),
+        },
+    )
+
+
+def receitas_relatorio_pdf(request, ano, mes):
+    status = "pago" if request.GET.get("status") == "pago" else ""
+    categoria = request.GET.get("categoria", "").strip()
+    inicio = date(ano, mes, 1)
+    fim = inicio.replace(day=monthrange(ano, mes)[1])
+    receitas_lista = [
+        item
+        for item in receitas_itens(request)
+        if inicio <= data_financeira_receita(item) <= fim
+        and (not status or item.status == status)
+        and (not categoria or item.categoria == categoria)
+    ]
+    total = sum((item.valor for item in receitas_lista), Decimal("0.00"))
+    titulo = f"Relatorio de receitas - {MESES_PT[mes - 1]} {ano}"
+    if status:
+        titulo += " - Pago"
+    if categoria:
+        titulo += f" - {categoria}"
+    linhas = [
+        [
+            item.descricao,
+            item.categoria or "Sem categoria",
+            item.detalhe,
+            data_financeira_receita(item).strftime("%d/%m/%Y"),
+            item.forma_pagamento,
+            item.status_label,
+            f"R$ {total_brl(item.valor)}",
+        ]
+        for item in receitas_lista
+    ]
+    response = HttpResponse(
+        gerar_pdf_relatorio_simples(
+            titulo,
+            f"Periodo: {inicio:%d/%m/%Y} ate {fim:%d/%m/%Y}",
+            f"Total do periodo: R$ {total_brl(total)}",
+            ["Descricao", "Categoria", "Origem", "Data", "Pagamento", "Status", "Valor"],
+            linhas,
+        ),
+        content_type="application/pdf",
+    )
+    response["Content-Disposition"] = f'inline; filename="receitas_{ano}_{mes:02d}.pdf"'
+    return response
+
+
 def financeiro_cliente_painel(request, cliente_id):
     status = request.GET.get("status", "")
     hoje = timezone.localdate()
@@ -1316,19 +1536,10 @@ def tarefa_marcar_concluida(request, pk):
 
 def despesas(request):
     status = "pago" if request.GET.get("status") == "pago" else ""
-    categoria = request.GET.get("categoria", "").strip()
     despesas_base = filtrar_empresa(Despesa.objects.all(), request)
-    categorias = (
-        despesas_base.exclude(categoria="")
-        .order_by("categoria")
-        .values_list("categoria", flat=True)
-        .distinct()
-    )
     despesas_qs = despesas_base.order_by("vencimento", "data", "descricao")
     if status:
         despesas_qs = despesas_qs.filter(status=status)
-    if categoria:
-        despesas_qs = despesas_qs.filter(categoria=categoria)
 
     grupos_por_mes = {}
     for despesa in despesas_qs:
@@ -1343,11 +1554,14 @@ def despesas(request):
                 "total_valor": Decimal("0.00"),
                 "pagas": 0,
                 "pendentes": 0,
+                "categorias": set(),
             },
         )
         grupo = grupos_por_mes[chave]
         grupo["despesas"].append(despesa)
         grupo["total_valor"] += despesa.valor
+        if despesa.categoria:
+            grupo["categorias"].add(despesa.categoria)
         if despesa.status == "pago":
             grupo["pagas"] += 1
         else:
@@ -1356,7 +1570,7 @@ def despesas(request):
     grupos_despesas = []
     for chave in sorted(grupos_por_mes):
         grupo = grupos_por_mes[chave]
-        grupos_despesas.append({**grupo, "total": len(grupo["despesas"])})
+        grupos_despesas.append({**grupo, "categorias": sorted(grupo["categorias"]), "total": len(grupo["despesas"])})
 
     return render(
         request,
@@ -1364,11 +1578,7 @@ def despesas(request):
         {
             "grupos_despesas": grupos_despesas,
             "status": status,
-            "categoria": categoria,
-            "categorias": categorias,
-            "filter_query": urlencode(
-                {chave: valor for chave, valor in {"status": status, "categoria": categoria}.items() if valor}
-            ),
+            "filter_query": urlencode({chave: valor for chave, valor in {"status": status}.items() if valor}),
         },
     )
 
@@ -1711,8 +1921,13 @@ def agenda(request):
 
 def cobrancas(request):
     hoje = timezone.localdate()
-    parcelas = filtrar_parcelas_empresa(Parcela.objects.select_related("venda", "venda__cliente"), request).filter(
-        venda__evento__isnull=False
+    parcelas = preparar_saldos_parcelas(
+        list(
+            filtrar_parcelas_empresa(
+                Parcela.objects.select_related("venda", "venda__cliente").filter(venda__evento__isnull=False),
+                request,
+            ).order_by("venda_id", "vencimento", "numero", "id")
+        )
     )
     grupos_base = [
         ("vencidos", "Vencidos", "", "vencido"),
@@ -1759,7 +1974,7 @@ def cobrancas(request):
             }
         )
 
-    pagamentos = parcelas.exclude(status="pago")[:40]
+    pagamentos = [parcela for parcela in parcelas if parcela.status != "pago"][:40]
     pagamentos_por_cliente = {}
     for parcela in pagamentos:
         cliente = parcela.venda.cliente
@@ -1976,6 +2191,106 @@ def eventos(request):
         grupos_eventos.append({**grupo, "total": len(grupo["eventos"])})
 
     return render(request, "crm/eventos.html", {"grupos_eventos": grupos_eventos, "busca": busca})
+
+
+def agrupar_eventos_operacionais(eventos, data_func, descricao):
+    grupos_por_mes = {}
+    for evento in eventos:
+        data_referencia = data_func(evento)
+        if not data_referencia:
+            continue
+        chave = data_referencia.replace(day=1)
+        grupos_por_mes.setdefault(
+            chave,
+            {
+                "titulo": f"{MESES_PT[chave.month - 1]} {chave.year}",
+                "descricao": descricao,
+                "itens": [],
+            },
+        )
+        evento.data_operacional = data_referencia
+        grupos_por_mes[chave]["itens"].append(evento)
+
+    grupos = []
+    for chave in sorted(grupos_por_mes):
+        grupo = grupos_por_mes[chave]
+        grupo["itens"].sort(key=lambda evento: (evento.data_operacional, evento.horario or datetime.min.time(), evento.nome))
+        grupos.append({**grupo, "total": len(grupo["itens"])})
+    return grupos
+
+
+def painel_edicao(request):
+    eventos_qs = filtrar_empresa(
+        Evento.objects.select_related("cliente").filter(data_festa__isnull=False),
+        request,
+    ).order_by("data_festa", "horario", "nome")
+    grupos = agrupar_eventos_operacionais(
+        eventos_qs,
+        lambda evento: evento.edicao_data or (evento.data_festa + timedelta(days=1)),
+        "Eventos separados pelo dia previsto para edicao.",
+    )
+    return render(
+        request,
+        "crm/edicao.html",
+        {
+            "page_title": "Edicao",
+            "page_subtitle": "Eventos separados por mes conforme a data prevista para edicao.",
+            "grupos": grupos,
+            "empty_message": "Nenhum evento com data marcada para edicao.",
+            "data_label": "Data da edicao",
+            "target_prefix": "edicaoMes",
+        },
+    )
+
+
+def edicao_evento_form(request, pk):
+    evento = get_object_or_404(filtrar_empresa(Evento.objects.select_related("cliente"), request), pk=pk)
+    form = EdicaoEventoForm(request.POST or None, instance=evento)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Dados de edicao salvos com sucesso.")
+        return redirect("edicao")
+    return render(request, "crm/form.html", {"form": form, "titulo": "Edicao do evento", "voltar": "edicao"})
+
+
+def painel_album(request):
+    eventos_qs = filtrar_empresa(
+        Evento.objects.select_related("cliente").filter(data_festa__isnull=False, tem_album=True),
+        request,
+    ).order_by("data_festa", "horario", "nome")
+    eventos = list(eventos_qs)
+    for evento in eventos:
+        evento.album_data_limite = evento.album_data_recebimento or (
+            add_months(evento.data_festa, 12) if evento.data_festa else None
+        )
+        evento.album_whatsapp_url = link_whatsapp_album(evento) if evento.album_status == "pendente" else ""
+    grupos = agrupar_eventos_operacionais(
+        eventos,
+        lambda evento: evento.data_festa,
+        "Eventos com album separados pela data do evento.",
+    )
+    return render(
+        request,
+        "crm/album.html",
+        {
+            "page_title": "Album",
+            "page_subtitle": "Eventos com album separados por mes conforme a data do evento.",
+            "grupos": grupos,
+            "empty_message": "Nenhum evento com album marcado.",
+            "data_label": "Data do evento",
+            "target_prefix": "albumMes",
+        },
+    )
+
+
+def album_evento_form(request, pk):
+    evento = get_object_or_404(filtrar_empresa(Evento.objects.select_related("cliente"), request), pk=pk)
+    form = AlbumEventoForm(request.POST or None, instance=evento)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Dados de album salvos com sucesso.")
+        return redirect("album")
+    return render(request, "crm/form.html", {"form": form, "titulo": "Album do evento", "voltar": "album"})
 
 
 def periodo_relatorio_request(request):

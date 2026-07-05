@@ -1,4 +1,5 @@
 from calendar import monthrange
+from datetime import timedelta
 from decimal import Decimal
 import unicodedata
 
@@ -457,6 +458,8 @@ class EventoForm(forms.ModelForm):
             "idade",
             "local_evento",
             "em_buffet",
+            "tem_album",
+            "album_tipo",
             "descricao_servico",
             "valor_cobrado",
             "forma_pagamento",
@@ -480,6 +483,8 @@ class EventoForm(forms.ModelForm):
             "idade": "Idade do aniversariante",
             "local_evento": "Local do evento",
             "em_buffet": "Sera em buffet?",
+            "tem_album": "Album: sim ou nao?",
+            "album_tipo": "Tipo de Album",
             "descricao_servico": "Descricao do servico contratado",
             "valor_cobrado": "Valor cobrado",
             "forma_pagamento": "Forma de pagamento",
@@ -498,6 +503,7 @@ class EventoForm(forms.ModelForm):
             "endereco_contratante": forms.TextInput(attrs={"placeholder": "Rua, numero, bairro, cidade"}),
             "descricao_servico": forms.Textarea(attrs={"rows": 4, "placeholder": "Descreva exatamente o servico contratado"}),
             "local_evento": forms.TextInput(attrs={"placeholder": "Ex: Buffet, igreja, salao, endereco"}),
+            "album_tipo": forms.TextInput(attrs={"placeholder": "Ex: Premium, fotolivro, tradicional"}),
             "quantidade_parcelas": forms.NumberInput(attrs={"min": 1, "max": 60}),
             "observacoes": forms.Textarea(attrs={"rows": 3}),
         }
@@ -540,6 +546,7 @@ class EventoForm(forms.ModelForm):
         self.fields["pagamento_recebido"].help_text = "Marque quando o valor ja entrou no caixa."
         self.fields["adiantamento_pago"].help_text = "Marque quando o adiantamento ja entrou no caixa."
         self.fields["quantidade_parcelas"].widget.attrs.update({"min": 1, "max": 60})
+        self.fields["album_tipo"].required = False
 
     def clean_tipo_evento(self):
         return valor_tipo_evento_digitado(self.cleaned_data.get("tipo_evento"))
@@ -569,6 +576,13 @@ class EventoForm(forms.ModelForm):
         evento.nome = nome
         if not evento.adiantamento:
             evento.adiantamento = Decimal("0.00")
+        if evento.tem_album and evento.data_festa and not evento.album_data_recebimento:
+            evento.album_data_recebimento = add_months(evento.data_festa, 12)
+        if not evento.tem_album:
+            evento.album_tipo = ""
+            evento.album_data_recebimento = None
+            evento.album_data_envio = None
+            evento.album_status = "pendente"
         if self.empresa:
             evento.empresa = self.empresa
         cliente_qs = Cliente.objects.filter(nome__iexact=nome)
@@ -752,6 +766,97 @@ class TarefaForm(forms.ModelForm):
         elif not cliente and not nome_contato:
             self.add_error("nome_contato", "Informe um cliente cadastrado ou um nome avulso.")
         return cleaned_data
+
+
+class EdicaoEventoForm(forms.ModelForm):
+    class Meta:
+        model = Evento
+        fields = [
+            "edicao_data",
+            "edicao_cliente_pais",
+            "edicao_contato",
+            "edicao_aniversariantes",
+            "edicao_tipo_servico",
+            "edicao_backup",
+            "edicao_selecao",
+            "edicao_editado",
+            "edicao_data_entrega",
+            "edicao_status",
+        ]
+        labels = {
+            "edicao_data": "Data",
+            "edicao_cliente_pais": "Cliente(Pais)",
+            "edicao_contato": "Contato",
+            "edicao_aniversariantes": "Aniversariantes",
+            "edicao_tipo_servico": "Tipo de Servico",
+            "edicao_backup": "Backup: Sim ou Nao",
+            "edicao_selecao": "Selecao: Sim ou Nao",
+            "edicao_editado": "Editado: Sim ou Nao",
+            "edicao_data_entrega": "Data da Entrega",
+            "edicao_status": "Status",
+        }
+        widgets = {
+            "edicao_data": DateInput(),
+            "edicao_data_entrega": DateInput(),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        evento = self.instance
+        if not evento or not evento.pk:
+            return
+        if not evento.edicao_data and evento.data_festa:
+            self.fields["edicao_data"].initial = evento.data_festa + timedelta(days=1)
+        if not evento.edicao_cliente_pais:
+            self.fields["edicao_cliente_pais"].initial = evento.nome
+        if not evento.edicao_contato:
+            self.fields["edicao_contato"].initial = evento.contato
+        if not evento.edicao_aniversariantes:
+            self.fields["edicao_aniversariantes"].initial = evento.aniversariante
+        if not evento.edicao_tipo_servico:
+            self.fields["edicao_tipo_servico"].initial = (
+                dict(Evento.TIPO_CHOICES).get(evento.tipo_evento, evento.tipo_evento) or evento.descricao_servico
+            )
+
+
+class AlbumEventoForm(forms.ModelForm):
+    class Meta:
+        model = Evento
+        fields = [
+            "nome",
+            "tipo_evento",
+            "album_tipo",
+            "album_data_recebimento",
+            "album_data_envio",
+            "album_status",
+        ]
+        labels = {
+            "nome": "Cliente",
+            "tipo_evento": "Evento",
+            "album_tipo": "Tipo de Album",
+            "album_data_recebimento": "Data Final para recebimento de Fotos do Album",
+            "album_data_envio": "Data de Envio",
+            "album_status": "Status",
+        }
+        widgets = {
+            "album_data_envio": DateInput(),
+            "album_data_recebimento": DateInput(),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        evento = self.instance
+        if evento and evento.pk and not evento.album_data_recebimento and evento.data_festa:
+            self.fields["album_data_recebimento"].initial = add_months(evento.data_festa, 12)
+
+    def save(self, commit=True):
+        evento = super().save(commit=False)
+        if evento.tem_album and evento.data_festa and not evento.album_data_recebimento:
+            evento.album_data_recebimento = add_months(evento.data_festa, 12)
+        if commit:
+            evento.save()
+            self.save_m2m()
+        return evento
 
 
 class DocumentoForm(forms.ModelForm):
