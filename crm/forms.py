@@ -792,7 +792,7 @@ class EdicaoEventoForm(forms.ModelForm):
             "edicao_backup": "Backup: Sim ou Nao",
             "edicao_selecao": "Selecao: Sim ou Nao",
             "edicao_editado": "Editado: Sim ou Nao",
-            "edicao_data_entrega": "Data da Entrega",
+            "edicao_data_entrega": "Data da Entrega ao Cliente",
             "edicao_status": "Status",
         }
         widgets = {

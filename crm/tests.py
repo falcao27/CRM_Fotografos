@@ -1,5 +1,5 @@
 from calendar import monthrange
-from datetime import date
+from datetime import date, timedelta
 from importlib import import_module
 from io import BytesIO
 from decimal import Decimal
@@ -142,9 +142,31 @@ class EventoDocumentoFlowTests(TestCase):
         self.assertContains(response, "Cliente Edicao")
         self.assertContains(response, "05/07/2026")
         self.assertContains(response, "Data da edicao")
+        self.assertContains(response, "Data da Entrega ao Cliente")
         self.assertContains(response, "Status")
         self.assertContains(response, reverse("edicao_evento_editar", args=[evento.pk]))
         self.assertContains(response, "Buscar cliente, contato ou pais")
+
+    def test_painel_edicao_nao_mostra_evento_no_dia_do_evento(self):
+        hoje = timezone.localdate()
+        cliente = Cliente.objects.create(nome="Cliente Hoje")
+        Evento.objects.create(
+            cliente=cliente,
+            nome="Cliente Hoje",
+            tipo_evento="aniversario",
+            data_festa=hoje,
+        )
+        Evento.objects.create(
+            cliente=cliente,
+            nome="Cliente Ontem",
+            tipo_evento="aniversario",
+            data_festa=hoje - timedelta(days=1),
+        )
+
+        response = self.client.get(reverse("edicao"))
+
+        self.assertContains(response, "Cliente Ontem")
+        self.assertNotContains(response, "Cliente Hoje")
 
     def test_formulario_edicao_salva_dados_operacionais(self):
         evento = Evento.objects.create(
@@ -215,6 +237,29 @@ class EventoDocumentoFlowTests(TestCase):
         self.assertContains(response, "Enviar lembrete mensal pelo WhatsApp")
         self.assertContains(response, reverse("album_evento_editar", args=[evento.pk]))
         self.assertNotContains(response, "Cliente Sem Album")
+
+    def test_painel_album_nao_mostra_evento_no_dia_do_evento(self):
+        hoje = timezone.localdate()
+        cliente = Cliente.objects.create(nome="Cliente Album Hoje")
+        Evento.objects.create(
+            cliente=cliente,
+            nome="Album Hoje",
+            tipo_evento="aniversario",
+            data_festa=hoje,
+            tem_album=True,
+        )
+        Evento.objects.create(
+            cliente=cliente,
+            nome="Album Ontem",
+            tipo_evento="aniversario",
+            data_festa=hoje - timedelta(days=1),
+            tem_album=True,
+        )
+
+        response = self.client.get(reverse("album"))
+
+        self.assertContains(response, "Album Ontem")
+        self.assertNotContains(response, "Album Hoje")
 
     def test_formulario_album_salva_dados_do_cabecario(self):
         evento = Evento.objects.create(

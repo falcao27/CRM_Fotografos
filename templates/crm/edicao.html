@@ -34,6 +34,7 @@
               <th>Data da edicao</th>
               <th>Data do evento</th>
               <th>Contato</th>
+              <th>Data da Entrega ao Cliente</th>
               <th>Status</th>
               <th></th>
             </tr>
@@ -55,6 +56,7 @@
                   {% if evento.horario %}<br><small>{{ evento.horario|time:"H:i" }}</small>{% endif %}
                 </td>
                 <td>{{ evento.edicao_contato|default:evento.contato|default:"-" }}</td>
+                <td>{{ evento.edicao_data_entrega|date:"d/m/Y"|default:"-" }}</td>
                 <td><span class="badge {{ evento.edicao_status }}">{{ evento.get_edicao_status_display }}</span></td>
                 <td class="actions">
                   <a class="icon-link" href="{% url 'edicao_evento_editar' evento.pk %}" title="Editar edicao"><i data-lucide="pencil"></i></a>
@@ -62,7 +64,7 @@
               </tr>
             {% endfor %}
             <tr data-edition-empty-row hidden>
-              <td colspan="7"><p class="empty">Nenhum cliente encontrado neste mes.</p></td>
+              <td colspan="8"><p class="empty">Nenhum cliente encontrado neste mes.</p></td>
             </tr>
           </tbody>
         </table>

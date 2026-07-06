@@ -2219,9 +2219,16 @@ def agrupar_eventos_operacionais(eventos, data_func, descricao):
     return grupos
 
 
+def data_liberacao_pos_evento(evento):
+    if not evento.data_festa:
+        return None
+    return evento.data_festa + timedelta(days=1)
+
+
 def painel_edicao(request):
+    hoje = timezone.localdate()
     eventos_qs = filtrar_empresa(
-        Evento.objects.select_related("cliente").filter(data_festa__isnull=False),
+        Evento.objects.select_related("cliente").filter(data_festa__lt=hoje),
         request,
     ).order_by("data_festa", "horario", "nome")
     grupos = agrupar_eventos_operacionais(
@@ -2254,8 +2261,9 @@ def edicao_evento_form(request, pk):
 
 
 def painel_album(request):
+    hoje = timezone.localdate()
     eventos_qs = filtrar_empresa(
-        Evento.objects.select_related("cliente").filter(data_festa__isnull=False, tem_album=True),
+        Evento.objects.select_related("cliente").filter(data_festa__lt=hoje, tem_album=True),
         request,
     ).order_by("data_festa", "horario", "nome")
     eventos = list(eventos_qs)
@@ -2266,8 +2274,8 @@ def painel_album(request):
         evento.album_whatsapp_url = link_whatsapp_album(evento) if evento.album_status == "pendente" else ""
     grupos = agrupar_eventos_operacionais(
         eventos,
-        lambda evento: evento.data_festa,
-        "Eventos com album separados pela data do evento.",
+        data_liberacao_pos_evento,
+        "Eventos com album separados pelo dia apos o evento.",
     )
     return render(
         request,
