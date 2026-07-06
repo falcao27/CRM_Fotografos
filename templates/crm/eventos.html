@@ -30,8 +30,8 @@
     <article class="panel finance-group-panel" id="eventosMes{{ forloop.counter }}" hidden>
       <button class="modal-close finance-group-close" type="button" data-event-close aria-label="Fechar"><i data-lucide="x"></i></button>
       <h2>{{ grupo.titulo }}</h2>
-      <div class="table-wrap">
-        <table>
+      <div class="table-wrap event-table-wrap">
+        <table class="event-table">
           <thead>
             <tr>
               <th>Nome</th>
@@ -51,27 +51,27 @@
           <tbody>
             {% for evento in grupo.eventos %}
               <tr>
-                <td><strong>{{ evento.nome }}</strong>{% if evento.cliente %}<br><small>Cliente cadastrado</small>{% endif %}</td>
-                <td>{{ evento.get_tipo_evento_display|default:"-" }}</td>
-                <td>
+                <td data-label="Nome" class="event-client-cell"><strong>{{ evento.nome }}</strong>{% if evento.cliente %}<br><small>Cliente cadastrado</small>{% endif %}</td>
+                <td data-label="Evento">{{ evento.get_tipo_evento_display|default:"-" }}</td>
+                <td data-label="Data">
                   {{ evento.data_festa|date:"d/m/Y" }}
                   {% if evento.horario %}<br><small>{{ evento.horario|time:"H:i" }}</small>{% endif %}
                 </td>
-                <td>{{ evento.local_evento|default:"-" }}</td>
-                <td>{% if evento.em_buffet %}Sim{% else %}Nao{% endif %}</td>
-                <td>{{ evento.valor_cobrado|brl }}</td>
-                <td>
+                <td data-label="Local">{{ evento.local_evento|default:"-" }}</td>
+                <td data-label="Buffet">{% if evento.em_buffet %}Sim{% else %}Nao{% endif %}</td>
+                <td data-label="Valor">{{ evento.valor_cobrado|brl }}</td>
+                <td data-label="Adiantamento">
                   {% if evento.adiantamento_pago and evento.adiantamento %}
                     <span class="badge pago">Sim</span><br><small>{{ evento.adiantamento|brl }}</small>
                   {% else %}
                     <span class="badge pendente">Nao</span>
                   {% endif %}
                 </td>
-                <td>{{ evento.get_forma_pagamento_display }}{% if evento.quantidade_parcelas > 1 %}<br><small>{{ evento.quantidade_parcelas }}x</small>{% endif %}</td>
-                <td><span class="badge {{ evento.pagamento_status }}">{{ evento.pagamento_status_label }}</span></td>
-                <td>{{ evento.contato|default:"-" }}</td>
-                <td>{{ evento.observacoes|truncatechars:70|default:"-" }}</td>
-                <td class="actions">
+                <td data-label="Forma de Pagamento">{{ evento.get_forma_pagamento_display }}{% if evento.quantidade_parcelas > 1 %}<br><small>{{ evento.quantidade_parcelas }}x</small>{% endif %}</td>
+                <td data-label="Pagamento"><span class="badge {{ evento.pagamento_status }}">{{ evento.pagamento_status_label }}</span></td>
+                <td data-label="Contato">{{ evento.contato|default:"-" }}</td>
+                <td data-label="Observacao">{{ evento.observacoes|truncatechars:70|default:"-" }}</td>
+                <td data-label="Acoes" class="actions event-actions-cell">
                   {% for documento in evento.documentos.all %}
                     <a class="icon-link" href="{% url 'documento_editar' documento.pk %}" title="Editar contrato"><i data-lucide="file-pen-line"></i></a>
                     {% if documento.arquivo_assinado %}

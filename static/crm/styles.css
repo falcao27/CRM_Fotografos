@@ -976,6 +976,14 @@ h2 {
   overflow-x: auto;
 }
 
+.event-table .event-client-cell {
+  min-width: 150px;
+}
+
+.event-table .event-actions-cell {
+  min-width: 128px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -3616,6 +3624,79 @@ input[readonly] {
   .table-wrap {
     max-width: 100%;
     -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 760px) {
+  .event-table-wrap {
+    overflow-x: visible;
+  }
+
+  .event-table {
+    display: block;
+    min-width: 0;
+  }
+
+  .event-table thead {
+    display: none;
+  }
+
+  .event-table tbody,
+  .event-table tr,
+  .event-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .event-table tr {
+    margin-bottom: 12px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-2);
+  }
+
+  .event-table td {
+    min-width: 0;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--line);
+    overflow-wrap: anywhere;
+  }
+
+  .event-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .event-table .event-client-cell {
+    padding-top: 0;
+  }
+
+  .event-table .event-client-cell strong {
+    display: block;
+    font-size: 17px;
+    line-height: 1.25;
+    overflow-wrap: break-word;
+  }
+
+  .event-table .event-actions-cell {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-bottom: 0;
+    border-bottom: 0;
+    white-space: normal;
+  }
+
+  .event-table .event-actions-cell::before {
+    flex: 1 0 100%;
   }
 }
 
