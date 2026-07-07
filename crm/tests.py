@@ -867,6 +867,10 @@ class FinanceiroReceitasTests(TestCase):
         self.assertContains(response, "Julho 2026")
         self.assertContains(response, "Cliente Parcial - Aniversario")
         self.assertContains(response, "Aniversario")
+        self.assertContains(response, "Parcela 1 de 2")
+        self.assertContains(response, "Parcela 2 de 2")
+        self.assertNotContains(response, "venc.")
+        self.assertNotContains(response, "Proximas:")
         self.assertContains(response, "R$ 200,00")
         self.assertContains(response, 'href="/receitas/')
 
@@ -927,6 +931,10 @@ class FinanceiroReceitasTests(TestCase):
         response = self.client.get(reverse("receitas"))
 
         self.assertContains(response, "Data do Primeiro Pagamento")
+        self.assertContains(response, "<th>Data do Primeiro Pagamento</th>", html=True)
+        self.assertContains(response, "<th>Parcela</th>", html=True)
+        conteudo = response.content.decode()
+        self.assertLess(conteudo.index("<th>Data do Primeiro Pagamento</th>"), conteudo.index("<th>Parcela</th>"))
         receitas_julho = response.context["grupos_receitas"][0]["receitas"]
         self.assertEqual([receita.descricao for receita in receitas_julho], ["Cliente Cedo - Evento Cedo", "Cliente Tarde - Evento Tarde"])
         self.assertEqual([receita.data_primeiro_pagamento for receita in receitas_julho], [date(2026, 7, 1), date(2026, 7, 10)])
@@ -966,7 +974,9 @@ class FinanceiroReceitasTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "application/pdf")
-        self.assertIn(b"Cliente Parci", response.content)
+        self.assertIn(b"Cliente Par", response.content)
+        self.assertIn(b"Data do Primeiro Pagamento", response.content)
+        self.assertIn(b"Vencimento", response.content)
 
     def test_baixa_parcial_mantem_valor_contratado_e_saldo_aberto(self):
         venda, parcela = self.criar_venda_com_parcela()

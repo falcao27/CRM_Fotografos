@@ -1234,6 +1234,11 @@ def data_primeiro_pagamento_receita(item):
     return item.data_primeiro_pagamento or data_financeira_receita(item)
 
 
+def detalhe_parcela_receita(parcela, parcelas_venda):
+    total = len(parcelas_venda) or parcela.venda.quantidade_parcelas or 1
+    return f"Parcela {parcela.numero} de {total}"
+
+
 def receitas_itens(request):
     parcelas = (
         filtrar_parcelas_empresa(
@@ -1246,8 +1251,10 @@ def receitas_itens(request):
     )
     parcelas_lista = list(parcelas)
     primeira_parcela_por_venda = {}
+    parcelas_por_venda = {}
     for parcela in parcelas_lista:
         primeira_parcela_por_venda.setdefault(parcela.venda_id, parcela.vencimento)
+        parcelas_por_venda.setdefault(parcela.venda_id, []).append(parcela)
 
     itens = []
     for parcela in preparar_saldos_parcelas(parcelas_lista):
@@ -1276,7 +1283,7 @@ def receitas_itens(request):
                 status=parcela.status,
                 status_label=parcela.get_status_display(),
                 valor=valor,
-                detalhe=f"Parcela {parcela.numero}",
+                detalhe=detalhe_parcela_receita(parcela, parcelas_por_venda.get(venda.id, [])),
             )
         )
 
@@ -1393,8 +1400,9 @@ def receitas_relatorio_pdf(request, ano, mes):
         [
             item.descricao,
             item.categoria or "Sem categoria",
-            item.detalhe,
             data_primeiro_pagamento_receita(item).strftime("%d/%m/%Y"),
+            item.detalhe,
+            item.vencimento.strftime("%d/%m/%Y"),
             item.forma_pagamento,
             item.status_label,
             f"R$ {total_brl(item.valor)}",
@@ -1406,7 +1414,7 @@ def receitas_relatorio_pdf(request, ano, mes):
             titulo,
             f"Periodo: {inicio:%d/%m/%Y} ate {fim:%d/%m/%Y}",
             f"Total do periodo: R$ {total_brl(total)}",
-            ["Descricao", "Categoria", "Origem", "Data do Primeiro Pagamento", "Pagamento", "Status", "Valor"],
+            ["Descricao", "Categoria", "Data do Primeiro Pagamento", "Parcela", "Vencimento", "Pagamento", "Status", "Valor"],
             linhas,
         ),
         content_type="application/pdf",
