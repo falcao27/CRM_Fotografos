@@ -1230,6 +1230,10 @@ def data_financeira_receita(item):
     return item.data_pagamento or item.vencimento
 
 
+def data_primeiro_pagamento_receita(item):
+    return item.data_primeiro_pagamento or data_financeira_receita(item)
+
+
 def receitas_itens(request):
     parcelas = (
         filtrar_parcelas_empresa(
@@ -1240,20 +1244,32 @@ def receitas_itens(request):
         )
         .order_by("vencimento", "numero", "venda__cliente__nome")
     )
+    parcelas_lista = list(parcelas)
+    primeira_parcela_por_venda = {}
+    for parcela in parcelas_lista:
+        primeira_parcela_por_venda.setdefault(parcela.venda_id, parcela.vencimento)
+
     itens = []
-    for parcela in preparar_saldos_parcelas(list(parcelas)):
+    for parcela in preparar_saldos_parcelas(parcelas_lista):
         valor_recebido = parcela.valor_recebido_efetivo
         valor = valor_recebido if parcela.status == "pago" else parcela.valor_em_aberto
         if valor <= Decimal("0.00"):
             continue
         venda = parcela.venda
         cliente = venda.cliente
+        evento = getattr(venda, "evento", None)
+        data_primeiro_pagamento = (
+            getattr(evento, "primeira_parcela", None)
+            or primeira_parcela_por_venda.get(venda.id)
+            or data_financeira_receita(parcela)
+        )
         itens.append(
             SimpleNamespace(
                 origem="parcela",
                 descricao=f"{cliente.nome} - {venda.titulo}",
                 categoria=categoria_receita_evento(venda),
                 data=venda.data_venda,
+                data_primeiro_pagamento=data_primeiro_pagamento,
                 vencimento=parcela.vencimento,
                 data_pagamento=parcela.data_pagamento,
                 forma_pagamento=venda.get_forma_pagamento_display(),
@@ -1284,6 +1300,7 @@ def receitas_itens(request):
                 descricao=f"{cliente.nome if cliente else evento.nome} - {venda.titulo}",
                 categoria=evento.get_tipo_evento_display() if evento.tipo_evento else "Venda",
                 data=venda.data_venda,
+                data_primeiro_pagamento=evento.primeira_parcela or venda.data_venda,
                 vencimento=venda.data_venda,
                 data_pagamento=venda.data_venda,
                 forma_pagamento=venda.get_forma_pagamento_display(),
@@ -1298,7 +1315,14 @@ def receitas_itens(request):
 
 def agrupar_receitas_por_mes(itens):
     grupos_por_mes = {}
-    for item in sorted(itens, key=lambda receita: (data_financeira_receita(receita), receita.descricao)):
+    for item in sorted(
+        itens,
+        key=lambda receita: (
+            data_primeiro_pagamento_receita(receita),
+            data_financeira_receita(receita),
+            receita.descricao,
+        ),
+    ):
         chave = data_financeira_receita(item).replace(day=1)
         grupos_por_mes.setdefault(
             chave,
@@ -1370,7 +1394,7 @@ def receitas_relatorio_pdf(request, ano, mes):
             item.descricao,
             item.categoria or "Sem categoria",
             item.detalhe,
-            data_financeira_receita(item).strftime("%d/%m/%Y"),
+            data_primeiro_pagamento_receita(item).strftime("%d/%m/%Y"),
             item.forma_pagamento,
             item.status_label,
             f"R$ {total_brl(item.valor)}",
@@ -1382,7 +1406,7 @@ def receitas_relatorio_pdf(request, ano, mes):
             titulo,
             f"Periodo: {inicio:%d/%m/%Y} ate {fim:%d/%m/%Y}",
             f"Total do periodo: R$ {total_brl(total)}",
-            ["Descricao", "Categoria", "Origem", "Data", "Pagamento", "Status", "Valor"],
+            ["Descricao", "Categoria", "Origem", "Data do Primeiro Pagamento", "Pagamento", "Status", "Valor"],
             linhas,
         ),
         content_type="application/pdf",
@@ -2076,6 +2100,9 @@ def parcelas_do_request(request, form):
         houve_erro = True
     total_parcelas = sum((parcela["valor"] for parcela in parcelas), Decimal("0.00"))
     valor_total = form.cleaned_data.get("valor_cobrado") or Decimal("0.00")
+    valor_recebido_cartao = form.cleaned_data.get("valor_recebido_cartao")
+    if form.cleaned_data.get("forma_pagamento") == "cartao" and valor_recebido_cartao:
+        valor_total = valor_recebido_cartao
     adiantamento = form.cleaned_data.get("adiantamento") or Decimal("0.00")
     valor_restante = max(valor_total - adiantamento, Decimal("0.00"))
     if total_parcelas != valor_restante:
@@ -2158,7 +2185,7 @@ def aplicar_parcelas_evento(evento, parcelas):
     venda.parcelas.exclude(pk__in=parcelas_mantidas).delete()
     venda.quantidade_parcelas = len(parcelas) + deslocamento
     venda.condicao_pagamento = "parcelado" if venda.quantidade_parcelas > 1 else "avista"
-    venda.valor_total = evento.valor_cobrado
+    venda.valor_total = evento.valor_financeiro
     venda.status = "pago" if venda.valor_pago >= venda.valor_total and venda.valor_total else "pendente"
     venda.save(update_fields=["quantidade_parcelas", "condicao_pagamento", "valor_total", "status", "atualizado_em"])
 

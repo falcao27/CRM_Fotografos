@@ -340,6 +340,50 @@ class EventoDocumentoFlowTests(TestCase):
         self.assertEqual(str(parcelas[1].valor), "700.00")
         self.assertEqual(parcelas[1].vencimento.isoformat(), "2026-07-10")
 
+    def test_pagamento_cartao_exige_valor_recebido_da_maquina(self):
+        dados = self.dados_evento()
+        dados.update(
+            {
+                "forma_pagamento": "cartao",
+                "parcela_valor": ["1200,00"],
+            }
+        )
+
+        response = self.client.post(reverse("evento_novo"), dados)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Informe o valor real recebido da maquina.")
+        self.assertFalse(Evento.objects.filter(nome="Maria Silva").exists())
+
+    def test_pagamento_cartao_usa_valor_recebido_no_financeiro_receitas_e_dashboard(self):
+        dados = self.dados_evento()
+        dados.update(
+            {
+                "forma_pagamento": "cartao",
+                "valor_recebido_cartao": "1150,00",
+                "pagamento_recebido": "on",
+                "parcela_valor": ["1150,00"],
+            }
+        )
+
+        response = self.client.post(reverse("evento_novo"), dados)
+
+        self.assertRedirects(response, reverse("eventos"))
+        evento = Evento.objects.select_related("venda").get(nome="Maria Silva")
+        parcela = evento.venda.parcelas.get()
+        self.assertEqual(evento.valor_cobrado, Decimal("1200.00"))
+        self.assertEqual(evento.valor_recebido_cartao, Decimal("1150.00"))
+        self.assertEqual(evento.venda.valor_total, Decimal("1150.00"))
+        self.assertEqual(parcela.valor, Decimal("1150.00"))
+        self.assertEqual(parcela.valor_recebido, Decimal("1150.00"))
+
+        receitas_response = self.client.get(reverse("receitas"))
+        self.assertEqual(receitas_response.context["grupos_receitas"][0]["total_valor"], Decimal("1150.00"))
+
+        dashboard_response = self.client.get(reverse("dashboard"), {"receita": "todos"})
+        self.assertEqual(dashboard_response.context["totais"]["receita_total"], Decimal("1150.00"))
+        self.assertEqual(dashboard_response.context["totais"]["receita_paga"], Decimal("1150.00"))
+
     def test_parcelas_devem_somar_valor_restante_apos_adiantamento(self):
         dados = self.dados_evento()
         dados.update(
@@ -825,6 +869,67 @@ class FinanceiroReceitasTests(TestCase):
         self.assertContains(response, "Aniversario")
         self.assertContains(response, "R$ 200,00")
         self.assertContains(response, 'href="/receitas/')
+
+    def test_painel_receitas_mostra_e_ordena_por_primeiro_pagamento(self):
+        cliente_tarde = Cliente.objects.create(nome="Cliente Tarde", telefone="85999990001")
+        venda_tarde = Venda.objects.create(
+            cliente=cliente_tarde,
+            titulo="Evento Tarde",
+            valor_total="300.00",
+            status="pago",
+            forma_pagamento="pix",
+        )
+        Evento.objects.create(
+            cliente=cliente_tarde,
+            venda=venda_tarde,
+            nome="Cliente Tarde",
+            tipo_evento="aniversario",
+            valor_cobrado="300.00",
+            forma_pagamento="pix",
+            primeira_parcela=date(2026, 7, 10),
+        )
+        Parcela.objects.create(
+            venda=venda_tarde,
+            numero=1,
+            valor="300.00",
+            valor_recebido="300.00",
+            vencimento=date(2026, 7, 10),
+            data_pagamento=date(2026, 7, 10),
+            status="pago",
+        )
+        cliente_cedo = Cliente.objects.create(nome="Cliente Cedo", telefone="85999990002")
+        venda_cedo = Venda.objects.create(
+            cliente=cliente_cedo,
+            titulo="Evento Cedo",
+            valor_total="300.00",
+            status="pago",
+            forma_pagamento="pix",
+        )
+        Evento.objects.create(
+            cliente=cliente_cedo,
+            venda=venda_cedo,
+            nome="Cliente Cedo",
+            tipo_evento="aniversario",
+            valor_cobrado="300.00",
+            forma_pagamento="pix",
+            primeira_parcela=date(2026, 7, 1),
+        )
+        Parcela.objects.create(
+            venda=venda_cedo,
+            numero=1,
+            valor="300.00",
+            valor_recebido="300.00",
+            vencimento=date(2026, 7, 1),
+            data_pagamento=date(2026, 7, 2),
+            status="pago",
+        )
+
+        response = self.client.get(reverse("receitas"))
+
+        self.assertContains(response, "Data do Primeiro Pagamento")
+        receitas_julho = response.context["grupos_receitas"][0]["receitas"]
+        self.assertEqual([receita.descricao for receita in receitas_julho], ["Cliente Cedo - Evento Cedo", "Cliente Tarde - Evento Tarde"])
+        self.assertEqual([receita.data_primeiro_pagamento for receita in receitas_julho], [date(2026, 7, 1), date(2026, 7, 10)])
 
     def test_painel_receitas_filtra_apenas_pagas(self):
         venda, _parcela = self.criar_venda_com_parcela()

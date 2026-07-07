@@ -434,6 +434,13 @@ class EventoForm(forms.ModelForm):
         decimal_places=2,
         widget=forms.TextInput(attrs={"inputmode": "decimal", "placeholder": "0,00"}),
     )
+    valor_recebido_cartao = CurrencyField(
+        label="Valor recebido da maquina",
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        widget=forms.TextInput(attrs={"inputmode": "decimal", "placeholder": "0,00"}),
+    )
     adiantamento = CurrencyField(
         label="Valor do adiantamento",
         max_digits=10,
@@ -462,6 +469,7 @@ class EventoForm(forms.ModelForm):
             "album_tipo",
             "descricao_servico",
             "valor_cobrado",
+            "valor_recebido_cartao",
             "forma_pagamento",
             "pagamento_recebido",
             "quantidade_parcelas",
@@ -487,6 +495,7 @@ class EventoForm(forms.ModelForm):
             "album_tipo": "Tipo de Album",
             "descricao_servico": "Descricao do servico contratado",
             "valor_cobrado": "Valor cobrado",
+            "valor_recebido_cartao": "Valor recebido da maquina",
             "forma_pagamento": "Forma de pagamento",
             "pagamento_recebido": "Pagamento ja recebido?",
             "quantidade_parcelas": "Quantidade de parcelas",
@@ -518,10 +527,13 @@ class EventoForm(forms.ModelForm):
             self.fields["tipo_evento"].initial = dict(Evento.TIPO_CHOICES).get(instance.tipo_evento, instance.tipo_evento)
             if not instance.valor_cobrado:
                 self.fields["valor_cobrado"].initial = ""
+            if not instance.valor_recebido_cartao:
+                self.fields["valor_recebido_cartao"].initial = ""
             if not instance.adiantamento:
                 self.fields["adiantamento"].initial = ""
         elif not self.is_bound:
             self.fields["valor_cobrado"].initial = ""
+            self.fields["valor_recebido_cartao"].initial = ""
             self.fields["adiantamento"].initial = ""
         self.tipo_evento_opcoes = opcoes_tipo_evento()
         clientes = Cliente.objects.order_by("nome")
@@ -562,10 +574,23 @@ class EventoForm(forms.ModelForm):
         if quantidade < 1:
             self.add_error("quantidade_parcelas", "Informe pelo menos 1 parcela.")
         valor_cobrado = cleaned_data.get("valor_cobrado") or Decimal("0.00")
+        valor_recebido_cartao = cleaned_data.get("valor_recebido_cartao")
+        forma_pagamento = cleaned_data.get("forma_pagamento")
         adiantamento = cleaned_data.get("adiantamento") or Decimal("0.00")
         cleaned_data["adiantamento"] = adiantamento
+        if forma_pagamento == "cartao":
+            if not valor_recebido_cartao or valor_recebido_cartao <= Decimal("0.00"):
+                self.add_error("valor_recebido_cartao", "Informe o valor real recebido da maquina.")
+            elif valor_recebido_cartao > valor_cobrado:
+                self.add_error("valor_recebido_cartao", "O valor recebido nao pode ser maior que o valor contratado.")
+        else:
+            cleaned_data["valor_recebido_cartao"] = None
+            valor_recebido_cartao = None
+        valor_financeiro = valor_recebido_cartao if forma_pagamento == "cartao" and valor_recebido_cartao else valor_cobrado
         if adiantamento > valor_cobrado:
             self.add_error("adiantamento", "O adiantamento nao pode ser maior que o valor cobrado.")
+        if adiantamento > valor_financeiro:
+            self.add_error("adiantamento", "O adiantamento nao pode ser maior que o valor financeiro recebido.")
         if not adiantamento:
             cleaned_data["adiantamento_pago"] = False
         return cleaned_data
@@ -640,7 +665,7 @@ class EventoForm(forms.ModelForm):
         venda.empresa = evento.empresa
         venda.cliente = evento.cliente
         venda.titulo = evento.tipo_evento or f"Evento - {evento.nome}"
-        venda.valor_total = evento.valor_cobrado
+        venda.valor_total = evento.valor_financeiro
         venda.forma_pagamento = evento.forma_pagamento
         tem_adiantamento = evento.adiantamento > 0
         quantidade_restante = max(evento.quantidade_parcelas, 1)
@@ -659,7 +684,7 @@ class EventoForm(forms.ModelForm):
             evento.venda = venda
             evento.save(update_fields=["venda", "atualizado_em"])
 
-        valor_restante = max(evento.valor_cobrado - evento.adiantamento, Decimal("0.00"))
+        valor_restante = max(evento.valor_financeiro - evento.adiantamento, Decimal("0.00"))
         valor_base = (valor_restante / quantidade_restante).quantize(Decimal("0.01"))
         restante = valor_restante
         parcelas_mantidas = []

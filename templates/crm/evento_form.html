@@ -162,6 +162,11 @@
             {{ form.forma_pagamento }}
             {% for error in form.forma_pagamento.errors %}<em>{{ error }}</em>{% endfor %}
           </label>
+          <label class="conditional-field" data-field="valor-recebido-cartao">
+            <span>{{ form.valor_recebido_cartao.label }}</span>
+            {{ form.valor_recebido_cartao }}
+            {% for error in form.valor_recebido_cartao.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
           <label class="conditional-field" data-field="quantidade-parcelas">
             <span>{{ form.quantidade_parcelas.label }}</span>
             {{ form.quantidade_parcelas }}
@@ -312,7 +317,9 @@
     const albumTipo = document.querySelector('[data-field="album-tipo"]');
     const quantidadeParcelas = document.getElementById("id_quantidade_parcelas");
     const valorTotal = document.getElementById("id_valor_cobrado");
+    const valorRecebidoCartao = document.getElementById("id_valor_recebido_cartao");
     const vencimentoInicial = document.getElementById("id_primeira_parcela");
+    const campoValorRecebidoCartao = document.querySelector('[data-field="valor-recebido-cartao"]');
     const parcelRows = document.querySelector("[data-parcel-rows]");
     const clientes = {
       {% if form.clientes_opcoes %}
@@ -365,6 +372,16 @@
       return numero.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
+    function pagamentoCartao() {
+      return formaPagamento && formaPagamento.value === "cartao";
+    }
+
+    function valorFinanceiroContrato() {
+      const valorCartao = numeroMoeda(valor("id_valor_recebido_cartao"));
+      if (pagamentoCartao() && valorCartao > 0) return valorCartao;
+      return numeroMoeda(valor("id_valor_cobrado"));
+    }
+
     function addMeses(data, meses) {
       const resultado = new Date(data.getFullYear(), data.getMonth() + meses, 1);
       const ultimoDia = new Date(resultado.getFullYear(), resultado.getMonth() + 1, 0).getDate();
@@ -405,7 +422,7 @@
     }
 
     function valorParcelaPadrao(indice, quantidade) {
-      const total = numeroMoeda(valor("id_valor_cobrado"));
+      const total = Math.max(valorFinanceiroContrato() - numeroMoeda(valor("id_adiantamento")), 0);
       if (!total || !quantidade) return "";
       const base = Math.floor((total / quantidade) * 100) / 100;
       const valorLinha = indice + 1 === quantidade ? total - base * (quantidade - 1) : base;
@@ -419,7 +436,7 @@
       return formatarDataInput(addMeses(new Date(partes[0], partes[1] - 1, partes[2]), indice));
     }
 
-    function sincronizarLinhasParcelas() {
+    function sincronizarLinhasParcelas(forcarValores) {
       if (!parcelRows || !quantidadeParcelas) return;
       const quantidade = Math.max(parseInt(quantidadeParcelas.value || "1", 10) || 1, 1);
       const linhasAtuais = Array.from(parcelRows.querySelectorAll("[data-parcel-row]"));
@@ -436,7 +453,7 @@
         const valorInput = linha.querySelector('[name="parcela_valor"]');
         const vencimento = linha.querySelector('[name="parcela_vencimento"]');
         if (numero) numero.value = indice + 1;
-        if (valorInput && !valorInput.value) valorInput.value = valorParcelaPadrao(indice, quantidade);
+        if (valorInput && (forcarValores || !valorInput.value)) valorInput.value = valorParcelaPadrao(indice, quantidade);
         if (vencimento && !vencimento.value) vencimento.value = vencimentoPadrao(indice);
       });
       atualizarPreview();
@@ -450,11 +467,19 @@
       if (email && !email.value) email.value = cliente.email || "";
     }
 
-    function alternarParcelas() {
+    function alternarParcelas(forcarValores) {
       if (!parcelas) return;
       parcelas.classList.remove("is-hidden");
       if (primeiraParcela) primeiraParcela.classList.remove("is-hidden");
-      sincronizarLinhasParcelas();
+      if (campoValorRecebidoCartao) {
+        const exibirValorCartao = pagamentoCartao();
+        campoValorRecebidoCartao.classList.toggle("is-hidden", !exibirValorCartao);
+        if (valorRecebidoCartao) {
+          valorRecebidoCartao.required = exibirValorCartao;
+          if (!exibirValorCartao) valorRecebidoCartao.value = "";
+        }
+      }
+      sincronizarLinhasParcelas(forcarValores);
     }
 
     function alternarAlbumTipo() {
@@ -471,9 +496,10 @@
       const valorTotal = numeroMoeda(valor("id_valor_cobrado"));
       const valorAdiantamento = numeroMoeda(valor("id_adiantamento"));
       const restanteContrato = Math.max(valorTotal - valorAdiantamento, 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const restanteFinanceiro = Math.max(valorFinanceiroContrato() - valorAdiantamento, 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       const autoriza = Boolean(campo("id_autoriza_uso_imagem")?.checked);
       const restanteInput = campo("id_valor_restante_contrato");
-      if (restanteInput) restanteInput.value = restanteContrato;
+      if (restanteInput) restanteInput.value = pagamentoCartao() ? restanteFinanceiro : restanteContrato;
       const dados = {
         cliente_nome: valor("id_nome"),
         cliente_cpf: valor("id_cpf_contratante"),
@@ -514,11 +540,13 @@
       preencherContato();
       atualizarPreview();
     });
-    if (formaPagamento) formaPagamento.addEventListener("change", alternarParcelas);
+    if (formaPagamento) formaPagamento.addEventListener("change", function () { alternarParcelas(true); });
     if (temAlbum) temAlbum.addEventListener("change", alternarAlbumTipo);
-    if (quantidadeParcelas) quantidadeParcelas.addEventListener("input", sincronizarLinhasParcelas);
-    if (valorTotal) valorTotal.addEventListener("change", sincronizarLinhasParcelas);
-    if (vencimentoInicial) vencimentoInicial.addEventListener("change", sincronizarLinhasParcelas);
+    if (quantidadeParcelas) quantidadeParcelas.addEventListener("input", function () { sincronizarLinhasParcelas(true); });
+    if (valorTotal) valorTotal.addEventListener("change", function () { sincronizarLinhasParcelas(true); });
+    if (valorRecebidoCartao) valorRecebidoCartao.addEventListener("change", function () { sincronizarLinhasParcelas(true); });
+    if (campo("id_adiantamento")) campo("id_adiantamento").addEventListener("change", function () { sincronizarLinhasParcelas(true); });
+    if (vencimentoInicial) vencimentoInicial.addEventListener("change", function () { sincronizarLinhasParcelas(false); });
     document.querySelectorAll("[data-contract-form] input, [data-contract-form] select, [data-contract-form] textarea").forEach((elemento) => {
       elemento.addEventListener("input", atualizarPreview);
       elemento.addEventListener("change", atualizarPreview);

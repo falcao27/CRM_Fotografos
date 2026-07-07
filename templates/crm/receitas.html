@@ -110,7 +110,7 @@
               <th>Descricao</th>
               <th>Categoria</th>
               <th>Origem</th>
-              <th>Data</th>
+              <th>Data do Primeiro Pagamento</th>
               <th>Vencimento</th>
               <th>Pagamento</th>
               <th>Status</th>
@@ -123,7 +123,7 @@
                 <td><strong>{{ receita.descricao }}</strong></td>
                 <td>{{ receita.categoria|default:"Sem categoria" }}</td>
                 <td>{{ receita.detalhe }}</td>
-                <td>{{ receita.data|date:"d/m/Y" }}</td>
+                <td>{{ receita.data_primeiro_pagamento|date:"d/m/Y" }}</td>
                 <td>{{ receita.vencimento|date:"d/m/Y" }}</td>
                 <td>{{ receita.forma_pagamento }}</td>
                 <td><span class="badge {{ receita.status }}">{{ receita.status_label }}</span></td>

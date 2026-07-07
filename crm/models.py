@@ -511,6 +511,7 @@ class Evento(models.Model):
     album_status = models.CharField(max_length=20, choices=ALBUM_STATUS_CHOICES, default="pendente")
     descricao_servico = models.TextField(blank=True)
     valor_cobrado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    valor_recebido_cartao = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     forma_pagamento = models.CharField(max_length=20, choices=Venda.FORMA_CHOICES, default="pix")
     pagamento_recebido = models.BooleanField(default=False)
     quantidade_parcelas = models.PositiveIntegerField(default=1)
@@ -527,6 +528,12 @@ class Evento(models.Model):
 
     def __str__(self):
         return f"{self.nome} - {self.get_tipo_evento_display() if self.tipo_evento else 'Evento'}"
+
+    @property
+    def valor_financeiro(self):
+        if self.forma_pagamento == "cartao" and self.valor_recebido_cartao:
+            return self.valor_recebido_cartao
+        return self.valor_cobrado
 
     @property
     def pagamento_status(self):
