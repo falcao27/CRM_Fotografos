@@ -915,12 +915,12 @@ class FinanceiroReceitasTests(TestCase):
         receita = grupos[0]["receitas"][0]
         self.assertEqual(receita.vencimento, date(2026, 6, 27))
         self.assertEqual(receita.data_pagamento, date(2026, 7, 2))
-        self.assertEqual(receita.pagamento_label, "Pix em 02/07/2026")
+        self.assertEqual(receita.pagamento_label, "Pix - baixa 02/07/2026")
         self.assertEqual(grupos[1]["titulo"], "Julho 2026")
         self.assertEqual(grupos[1]["total_valor"], Decimal("0.00"))
         self.assertEqual(grupos[1]["total_caixa"], Decimal("300.00"))
         self.assertEqual(grupos[1]["receitas"], [])
-        self.assertContains(response, "Pix em 02/07/2026")
+        self.assertContains(response, "Pix - baixa 02/07/2026")
         self.assertContains(response, "Vencimentos: R$ 0,00 | Caixa: R$ 300,00")
 
     def test_painel_receitas_mostra_e_ordena_por_primeiro_pagamento(self):

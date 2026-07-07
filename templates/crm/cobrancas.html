@@ -99,7 +99,7 @@
                           <small>Contrato {{ parcela.valor|brl }}</small>
                           <small>Recebido {{ parcela.valor_recebido_efetivo|brl }}</small>
                           <small>Vence {{ parcela.vencimento|date:"d/m/Y" }}</small>
-                          {% if parcela.data_pagamento %}<small>Pago em {{ parcela.data_pagamento|date:"d/m/Y" }}</small>{% endif %}
+                          {% if parcela.data_pagamento %}<small>Baixa registrada em {{ parcela.data_pagamento|date:"d/m/Y" }}</small>{% endif %}
                           <span class="badge {{ parcela.status_financeiro }}">{{ parcela.status_financeiro_label }}</span>
                         </div>
                         {% if parcela.status != "pago" %}

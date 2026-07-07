@@ -1240,7 +1240,7 @@ def data_primeiro_pagamento_receita(item):
 
 def pagamento_receita_label(forma_pagamento, data_pagamento):
     if data_pagamento:
-        return f"{forma_pagamento} em {data_pagamento:%d/%m/%Y}"
+        return f"{forma_pagamento} - baixa {data_pagamento:%d/%m/%Y}"
     return forma_pagamento
 
 
@@ -1438,7 +1438,7 @@ def receitas_relatorio_pdf(request, ano, mes):
             titulo,
             f"Periodo: {inicio:%d/%m/%Y} ate {fim:%d/%m/%Y}",
             f"Total do periodo: R$ {total_brl(total)}",
-            ["Descricao", "Categoria", "Data do Primeiro Pagamento", "Parcela", "Vencimento", "Pagamento", "Status", "Valor"],
+            ["Descricao", "Categoria", "Data do Primeiro Pagamento", "Parcela", "Vencimento", "Forma / baixa", "Status", "Valor"],
             linhas,
         ),
         content_type="application/pdf",
