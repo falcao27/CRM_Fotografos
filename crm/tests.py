@@ -874,6 +874,55 @@ class FinanceiroReceitasTests(TestCase):
         self.assertContains(response, "R$ 200,00")
         self.assertContains(response, 'href="/receitas/')
 
+    def test_painel_receitas_mantem_parcela_paga_no_mes_do_vencimento(self):
+        cliente = Cliente.objects.create(nome="Natalia Chaves Lopes", telefone="85999990003")
+        venda = Venda.objects.create(
+            cliente=cliente,
+            titulo="aniversario_infantil",
+            valor_total="600.00",
+            status="pendente",
+            forma_pagamento="pix",
+            condicao_pagamento="parcelado",
+            quantidade_parcelas=2,
+        )
+        Evento.objects.create(
+            cliente=cliente,
+            venda=venda,
+            nome="Natalia Chaves Lopes",
+            tipo_evento="aniversario_infantil",
+            valor_cobrado="600.00",
+            forma_pagamento="pix",
+            quantidade_parcelas=2,
+        )
+        Parcela.objects.create(
+            venda=venda,
+            numero=1,
+            valor="300.00",
+            valor_recebido="300.00",
+            vencimento=date(2026, 6, 27),
+            data_pagamento=date(2026, 7, 2),
+            status="pago",
+        )
+
+        response = self.client.get(reverse("receitas"))
+
+        grupos = response.context["grupos_receitas"]
+        self.assertEqual(len(grupos), 2)
+        self.assertEqual(grupos[0]["titulo"], "Junho 2026")
+        self.assertEqual(grupos[0]["chave"], date(2026, 6, 1))
+        self.assertEqual(grupos[0]["total_valor"], Decimal("300.00"))
+        self.assertEqual(grupos[0]["total_caixa"], Decimal("0.00"))
+        receita = grupos[0]["receitas"][0]
+        self.assertEqual(receita.vencimento, date(2026, 6, 27))
+        self.assertEqual(receita.data_pagamento, date(2026, 7, 2))
+        self.assertEqual(receita.pagamento_label, "Pix em 02/07/2026")
+        self.assertEqual(grupos[1]["titulo"], "Julho 2026")
+        self.assertEqual(grupos[1]["total_valor"], Decimal("0.00"))
+        self.assertEqual(grupos[1]["total_caixa"], Decimal("300.00"))
+        self.assertEqual(grupos[1]["receitas"], [])
+        self.assertContains(response, "Pix em 02/07/2026")
+        self.assertContains(response, "Vencimentos: R$ 0,00 | Caixa: R$ 300,00")
+
     def test_painel_receitas_mostra_e_ordena_por_primeiro_pagamento(self):
         cliente_tarde = Cliente.objects.create(nome="Cliente Tarde", telefone="85999990001")
         venda_tarde = Venda.objects.create(

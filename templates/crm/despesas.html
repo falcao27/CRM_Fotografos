@@ -146,8 +146,37 @@
 
 <script>
   window.addEventListener("DOMContentLoaded", function () {
-    function refreshIcons() {
-      if (window.lucide) window.lucide.createIcons();
+    function formatBRL(value) {
+      return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+    }
+
+    function appendCategory(url, category) {
+      if (!category) return url;
+      const separator = url.includes("?") ? "&" : "?";
+      return url + separator + "categoria=" + encodeURIComponent(category);
+    }
+
+    function updatePanel(panel) {
+      const category = panel.querySelector("[data-expense-category-filter]").value;
+      const rows = panel.querySelectorAll("[data-expense-row]");
+      const emptyRow = panel.querySelector("[data-expense-empty-row]");
+      const summary = panel.querySelector("[data-expense-summary]");
+      let total = 0;
+      let count = 0;
+      let paid = 0;
+
+      rows.forEach(function (row) {
+        const visible = !category || row.dataset.category === category;
+        row.hidden = !visible;
+        if (!visible) return;
+        count += 1;
+        total += Number(row.dataset.value || 0);
+        if (row.dataset.status === "pago") paid += 1;
+      });
+
+      emptyRow.hidden = count > 0;
+      summary.textContent = count + " despesa(s), " + paid + " paga(s), " + (count - paid) + " pendente(s). Total: " + formatBRL(total);
+      if (reportLink) reportLink.href = appendCategory(panel.dataset.expenseBaseReportUrl, category);
     }
 
     function formatBRL(value) {
@@ -184,17 +213,25 @@
     }
 
     const reportLink = document.querySelector("[data-expense-report-link]");
+    let activePanel = null;
 
     document.querySelectorAll("[data-expense-target]").forEach(function (button) {
       button.addEventListener("click", function () {
         const panel = document.getElementById(button.dataset.expenseTarget);
-        document.querySelectorAll(".finance-group-panel").forEach(function (item) {
-          item.hidden = item !== panel || !item.hidden;
-        });
+        if (!panel) return;
+        const shouldOpen = panel.hidden;
+        if (activePanel && activePanel !== panel) activePanel.hidden = true;
+        panel.hidden = !shouldOpen;
+        activePanel = shouldOpen ? panel : null;
         if (reportLink && panel && !panel.hidden) {
           updatePanel(panel);
         }
-        refreshIcons();
+      });
+    });
+
+    document.querySelectorAll("[data-expense-category-filter]").forEach(function (select) {
+      select.addEventListener("change", function () {
+        updatePanel(select.closest(".finance-group-panel"));
       });
     });
 
@@ -206,15 +243,16 @@
 
     document.querySelectorAll("[data-expense-close]").forEach(function (button) {
       button.addEventListener("click", function () {
-        button.closest(".finance-group-panel").hidden = true;
+        const panel = button.closest(".finance-group-panel");
+        panel.hidden = true;
+        if (activePanel === panel) activePanel = null;
       });
     });
 
     document.addEventListener("keydown", function (event) {
       if (event.key !== "Escape") return;
-      document.querySelectorAll(".finance-group-panel:not([hidden])").forEach(function (panel) {
-        panel.hidden = true;
-      });
+      if (activePanel) activePanel.hidden = true;
+      activePanel = null;
     });
   });
 </script>

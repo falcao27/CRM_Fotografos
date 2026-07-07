@@ -130,9 +130,8 @@
 
 <script>
   window.addEventListener("DOMContentLoaded", function () {
-    function refreshIcons() {
-      if (window.lucide) window.lucide.createIcons();
-    }
+    let activePanel = null;
+    let activeButton = null;
 
     function closeClientRows(panel) {
       panel.querySelectorAll(".billing-client-details-row").forEach(function (details) {
@@ -145,14 +144,16 @@
     }
 
     function closePanels() {
-      document.querySelectorAll(".billing-group").forEach(function (panel) {
-        panel.hidden = true;
-        closeClientRows(panel);
-      });
-      document.querySelectorAll("[data-billing-target]").forEach(function (button) {
-        button.setAttribute("aria-expanded", "false");
-        button.classList.remove("active");
-      });
+      if (activePanel) {
+        activePanel.hidden = true;
+        closeClientRows(activePanel);
+      }
+      if (activeButton) {
+        activeButton.setAttribute("aria-expanded", "false");
+        activeButton.classList.remove("active");
+      }
+      activePanel = null;
+      activeButton = null;
     }
 
     document.querySelectorAll("[data-billing-target]").forEach(function (button) {
@@ -165,7 +166,8 @@
           panel.hidden = false;
           button.setAttribute("aria-expanded", "true");
           button.classList.add("active");
-          refreshIcons();
+          activePanel = panel;
+          activeButton = button;
         }
       });
     });
@@ -181,7 +183,6 @@
       details.hidden = !shouldOpen;
       row.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
       row.classList.toggle("open", shouldOpen);
-      refreshIcons();
     }
 
     document.querySelectorAll("[data-payment-target]").forEach(function (row) {

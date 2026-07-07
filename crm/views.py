@@ -1226,12 +1226,22 @@ def categoria_receita_evento(venda):
     return "Venda"
 
 
-def data_financeira_receita(item):
-    return item.data_pagamento or item.vencimento
+def data_competencia_receita(item):
+    return item.vencimento
+
+
+def data_caixa_receita(item):
+    return item.data_pagamento
 
 
 def data_primeiro_pagamento_receita(item):
-    return item.data_primeiro_pagamento or data_financeira_receita(item)
+    return item.data_primeiro_pagamento or data_competencia_receita(item)
+
+
+def pagamento_receita_label(forma_pagamento, data_pagamento):
+    if data_pagamento:
+        return f"{forma_pagamento} em {data_pagamento:%d/%m/%Y}"
+    return forma_pagamento
 
 
 def detalhe_parcela_receita(parcela, parcelas_venda):
@@ -1263,12 +1273,13 @@ def receitas_itens(request):
         if valor <= Decimal("0.00"):
             continue
         venda = parcela.venda
+        forma_pagamento = venda.get_forma_pagamento_display()
         cliente = venda.cliente
         evento = getattr(venda, "evento", None)
         data_primeiro_pagamento = (
             getattr(evento, "primeira_parcela", None)
             or primeira_parcela_por_venda.get(venda.id)
-            or data_financeira_receita(parcela)
+            or data_competencia_receita(parcela)
         )
         itens.append(
             SimpleNamespace(
@@ -1279,10 +1290,12 @@ def receitas_itens(request):
                 data_primeiro_pagamento=data_primeiro_pagamento,
                 vencimento=parcela.vencimento,
                 data_pagamento=parcela.data_pagamento,
-                forma_pagamento=venda.get_forma_pagamento_display(),
+                forma_pagamento=forma_pagamento,
+                pagamento_label=pagamento_receita_label(forma_pagamento, parcela.data_pagamento),
                 status=parcela.status,
                 status_label=parcela.get_status_display(),
                 valor=valor,
+                valor_caixa=valor_recebido,
                 detalhe=detalhe_parcela_receita(parcela, parcelas_por_venda.get(venda.id, [])),
             )
         )
@@ -1300,6 +1313,7 @@ def receitas_itens(request):
     )
     for evento in adiantamentos:
         venda = evento.venda
+        forma_pagamento = venda.get_forma_pagamento_display()
         cliente = evento.cliente or venda.cliente
         itens.append(
             SimpleNamespace(
@@ -1310,10 +1324,12 @@ def receitas_itens(request):
                 data_primeiro_pagamento=evento.primeira_parcela or venda.data_venda,
                 vencimento=venda.data_venda,
                 data_pagamento=venda.data_venda,
-                forma_pagamento=venda.get_forma_pagamento_display(),
+                forma_pagamento=forma_pagamento,
+                pagamento_label=pagamento_receita_label(forma_pagamento, venda.data_venda),
                 status="pago",
                 status_label="Pago",
                 valor=evento.adiantamento,
+                valor_caixa=evento.adiantamento,
                 detalhe="Adiantamento",
             )
         )
@@ -1322,29 +1338,37 @@ def receitas_itens(request):
 
 def agrupar_receitas_por_mes(itens):
     grupos_por_mes = {}
-    for item in sorted(
-        itens,
-        key=lambda receita: (
-            data_primeiro_pagamento_receita(receita),
-            data_financeira_receita(receita),
-            receita.descricao,
-        ),
-    ):
-        chave = data_financeira_receita(item).replace(day=1)
-        grupos_por_mes.setdefault(
+    def grupo_receitas(chave):
+        return grupos_por_mes.setdefault(
             chave,
             {
                 "chave": chave,
                 "titulo": f"{MESES_PT[chave.month - 1]} {chave.year}",
-                "descricao": "Receitas por vencimento ou pagamento.",
+                "descricao": "Receitas por mes de vencimento.",
                 "receitas": [],
                 "total_valor": Decimal("0.00"),
+                "total_caixa": Decimal("0.00"),
                 "pagas": 0,
                 "pendentes": 0,
                 "categorias": set(),
             },
         )
-        grupo = grupos_por_mes[chave]
+
+    for item in itens:
+        data_caixa = data_caixa_receita(item)
+        if data_caixa:
+            grupo_receitas(data_caixa.replace(day=1))["total_caixa"] += item.valor_caixa
+
+    for item in sorted(
+        itens,
+        key=lambda receita: (
+            data_primeiro_pagamento_receita(receita),
+            data_competencia_receita(receita),
+            receita.descricao,
+        ),
+    ):
+        chave = data_competencia_receita(item).replace(day=1)
+        grupo = grupo_receitas(chave)
         grupo["receitas"].append(item)
         grupo["total_valor"] += item.valor
         if item.categoria:
@@ -1386,7 +1410,7 @@ def receitas_relatorio_pdf(request, ano, mes):
     receitas_lista = [
         item
         for item in receitas_itens(request)
-        if inicio <= data_financeira_receita(item) <= fim
+        if inicio <= data_competencia_receita(item) <= fim
         and (not status or item.status == status)
         and (not categoria or item.categoria == categoria)
     ]
@@ -1403,7 +1427,7 @@ def receitas_relatorio_pdf(request, ano, mes):
             data_primeiro_pagamento_receita(item).strftime("%d/%m/%Y"),
             item.detalhe,
             item.vencimento.strftime("%d/%m/%Y"),
-            item.forma_pagamento,
+            item.pagamento_label,
             item.status_label,
             f"R$ {total_brl(item.valor)}",
         ]

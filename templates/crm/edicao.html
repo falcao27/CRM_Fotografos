@@ -75,23 +75,24 @@
 
 <script>
   window.addEventListener("DOMContentLoaded", function () {
-    function refreshIcons() {
-      if (window.lucide) window.lucide.createIcons();
-    }
+    let activePanel = null;
 
     document.querySelectorAll("[data-edition-target]").forEach(function (button) {
       button.addEventListener("click", function () {
         const panel = document.getElementById(button.dataset.editionTarget);
-        document.querySelectorAll(".finance-group-panel").forEach(function (item) {
-          item.hidden = item !== panel || !item.hidden;
-        });
-        refreshIcons();
+        if (!panel) return;
+        const shouldOpen = panel.hidden;
+        if (activePanel && activePanel !== panel) activePanel.hidden = true;
+        panel.hidden = !shouldOpen;
+        activePanel = shouldOpen ? panel : null;
       });
     });
 
     document.querySelectorAll("[data-edition-close]").forEach(function (button) {
       button.addEventListener("click", function () {
-        button.closest(".finance-group-panel").hidden = true;
+        const panel = button.closest(".finance-group-panel");
+        panel.hidden = true;
+        if (activePanel === panel) activePanel = null;
       });
     });
 
@@ -115,9 +116,8 @@
 
     document.addEventListener("keydown", function (event) {
       if (event.key !== "Escape") return;
-      document.querySelectorAll(".finance-group-panel:not([hidden])").forEach(function (panel) {
-        panel.hidden = true;
-      });
+      if (activePanel) activePanel.hidden = true;
+      activePanel = null;
     });
   });
 </script>

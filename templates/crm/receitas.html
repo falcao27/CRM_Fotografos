@@ -71,7 +71,7 @@
       data-revenue-report-url="{% url 'receitas_relatorio_pdf' grupo.chave.year grupo.chave.month %}{% if filter_query %}?{{ filter_query }}{% endif %}"
     >
       <span>{{ grupo.titulo }}</span>
-      <small>{{ grupo.descricao }} Total: {{ grupo.total_valor|brl }}</small>
+      <small>{{ grupo.descricao }} Vencimentos: {{ grupo.total_valor|brl }} | Caixa: {{ grupo.total_caixa|brl }}</small>
       <strong>{{ grupo.total }}</strong>
     </button>
   {% empty %}
@@ -85,13 +85,14 @@
       class="panel finance-group-panel"
       id="receitasMes{{ forloop.counter }}"
       data-revenue-base-report-url="{% url 'receitas_relatorio_pdf' grupo.chave.year grupo.chave.month %}{% if filter_query %}?{{ filter_query }}{% endif %}"
+      data-revenue-cash-total="{{ grupo.total_caixa|decimal_attr }}"
       hidden
     >
       <button class="modal-close finance-group-close" type="button" data-revenue-close aria-label="Fechar"><i data-lucide="x"></i></button>
       <div class="panel-head revenue-panel-head">
         <div>
           <h2>{{ grupo.titulo }}</h2>
-          <small data-revenue-summary>{{ grupo.total }} receita(s), {{ grupo.pagas }} paga(s), {{ grupo.pendentes }} pendente(s). Total: {{ grupo.total_valor|brl }}</small>
+          <small data-revenue-summary>{{ grupo.total }} receita(s), {{ grupo.pagas }} paga(s), {{ grupo.pendentes }} pendente(s). Vencimentos: {{ grupo.total_valor|brl }} | Caixa: {{ grupo.total_caixa|brl }}</small>
         </div>
         <label class="revenue-category-filter">
           <span>Categoria</span>
@@ -125,7 +126,7 @@
                 <td>{{ receita.data_primeiro_pagamento|date:"d/m/Y" }}</td>
                 <td>{{ receita.detalhe }}</td>
                 <td>{{ receita.vencimento|date:"d/m/Y" }}</td>
-                <td>{{ receita.forma_pagamento }}</td>
+                <td>{{ receita.pagamento_label }}</td>
                 <td><span class="badge {{ receita.status }}">{{ receita.status_label }}</span></td>
                 <td>{{ receita.valor|brl }}</td>
               </tr>
@@ -142,10 +143,6 @@
 
 <script>
   window.addEventListener("DOMContentLoaded", function () {
-    function refreshIcons() {
-      if (window.lucide) window.lucide.createIcons();
-    }
-
     function formatBRL(value) {
       return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
     }
@@ -157,6 +154,7 @@
     }
 
     const reportLink = document.querySelector("[data-revenue-report-link]");
+    let activePanel = null;
 
     function updatePanel(panel) {
       const category = panel.querySelector("[data-revenue-category-filter]").value;
@@ -177,20 +175,22 @@
       });
 
       emptyRow.hidden = count > 0;
-      summary.textContent = count + " receita(s), " + paid + " paga(s), " + (count - paid) + " pendente(s). Total: " + formatBRL(total);
+      const cashTotal = Number(panel.dataset.revenueCashTotal || 0);
+      summary.textContent = count + " receita(s), " + paid + " paga(s), " + (count - paid) + " pendente(s). Vencimentos: " + formatBRL(total) + " | Caixa: " + formatBRL(cashTotal);
       if (reportLink) reportLink.href = appendCategory(panel.dataset.revenueBaseReportUrl, category);
     }
 
     document.querySelectorAll("[data-revenue-target]").forEach(function (button) {
       button.addEventListener("click", function () {
         const panel = document.getElementById(button.dataset.revenueTarget);
-        document.querySelectorAll(".finance-group-panel").forEach(function (item) {
-          item.hidden = item !== panel || !item.hidden;
-        });
+        if (!panel) return;
+        const shouldOpen = panel.hidden;
+        if (activePanel && activePanel !== panel) activePanel.hidden = true;
+        panel.hidden = !shouldOpen;
+        activePanel = shouldOpen ? panel : null;
         if (reportLink && panel && !panel.hidden) {
           updatePanel(panel);
         }
-        refreshIcons();
       });
     });
 
@@ -202,15 +202,16 @@
 
     document.querySelectorAll("[data-revenue-close]").forEach(function (button) {
       button.addEventListener("click", function () {
-        button.closest(".finance-group-panel").hidden = true;
+        const panel = button.closest(".finance-group-panel");
+        panel.hidden = true;
+        if (activePanel === panel) activePanel = null;
       });
     });
 
     document.addEventListener("keydown", function (event) {
       if (event.key !== "Escape") return;
-      document.querySelectorAll(".finance-group-panel:not([hidden])").forEach(function (panel) {
-        panel.hidden = true;
-      });
+      if (activePanel) activePanel.hidden = true;
+      activePanel = null;
     });
   });
 </script>
