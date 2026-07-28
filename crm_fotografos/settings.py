@@ -92,14 +92,17 @@ WSGI_APPLICATION = "crm_fotografos.wsgi.application"
 _database_url = os.environ.get("DATABASE_URL", "").strip()
 
 if _database_url:
+    _database_conn_max_age = int(os.environ.get("DATABASE_CONN_MAX_AGE", "0" if os.environ.get("VERCEL") else "600"))
     DATABASES = {
         "default": dj_database_url.config(
             default=_database_url,
-            conn_max_age=0 if os.environ.get("VERCEL") else 600,
+            conn_max_age=_database_conn_max_age,
             conn_health_checks=not bool(os.environ.get("VERCEL")),
             ssl_require=True,
         )
     }
+    if os.environ.get("DATABASE_POOL_MODE", "transaction" if os.environ.get("VERCEL") else "") == "transaction":
+        DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
 elif os.environ.get("VERCEL"):
     raise ImproperlyConfigured(
         "DATABASE_URL nao configurada. Adicione a connection string do Supabase nas variaveis da Vercel."

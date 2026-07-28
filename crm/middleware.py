@@ -1,4 +1,5 @@
 from datetime import timedelta
+import os
 
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser, User
@@ -58,8 +59,9 @@ class CRMRouteProtectionMiddleware:
 
     def _registrar_acesso(self, request):
         agora = timezone.now()
+        intervalo_ping = max(int(os.environ.get("CRM_ACCESS_PING_SECONDS", "300")), 60)
         ultimo_ping = request.session.get("crm_access_ping_at")
-        if ultimo_ping and agora.timestamp() - ultimo_ping < 60:
+        if ultimo_ping and agora.timestamp() - ultimo_ping < intervalo_ping:
             return
         request.session["crm_access_ping_at"] = int(agora.timestamp())
 
@@ -77,7 +79,7 @@ class CRMRouteProtectionMiddleware:
         perfil.save(update_fields=["ultimo_acesso", "online_ate"])
 
         ultimo = AcessoUsuario.objects.filter(user=request.user, caminho=request.path).first()
-        if ultimo and (agora - ultimo.criado_em).total_seconds() < 60:
+        if ultimo and (agora - ultimo.criado_em).total_seconds() < intervalo_ping:
             return
         AcessoUsuario.objects.create(
             user=request.user,

@@ -22,6 +22,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.http import HttpResponse
 from django.db.models import Case, Count, DecimalField, F, Q, Sum, When
+from django.db.models.functions import Coalesce, ExtractMonth, ExtractYear
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.crypto import get_random_string
@@ -1065,22 +1066,44 @@ def dashboard(request):
         formas_pagamento.append(
             {"nome": formas_labels.get(forma, forma), "total": item["total"], "quantidade": item["quantidade"]}
         )
+    inicio_grafico = add_months(inicio_mes, -5)
+    receitas_mensais = {
+        (item["ano"], item["mes"]): item["total"] or Decimal("0.00")
+        for item in (
+            parcelas_eventos.filter(data_pagamento__range=(inicio_grafico, fim_mes))
+            .annotate(ano=ExtractYear("data_pagamento"), mes=ExtractMonth("data_pagamento"))
+            .values("ano", "mes")
+            .annotate(total=Sum("valor_recebido"))
+        )
+    }
+    adiantamentos_mensais = {
+        (item["ano"], item["mes"]): item["total"] or Decimal("0.00")
+        for item in (
+            eventos_com_adiantamento.filter(venda__data_venda__range=(inicio_grafico, fim_mes))
+            .annotate(ano=ExtractYear("venda__data_venda"), mes=ExtractMonth("venda__data_venda"))
+            .values("ano", "mes")
+            .annotate(total=Sum("adiantamento"))
+        )
+    }
+    despesas_mensais = {
+        (item["ano"], item["mes"]): item["total"] or Decimal("0.00")
+        for item in (
+            filtrar_empresa(Despesa.objects.filter(status="pago"), request)
+            .annotate(data_financeira=Coalesce("vencimento", "data"))
+            .filter(data_financeira__range=(inicio_grafico, fim_mes))
+            .annotate(ano=ExtractYear("data_financeira"), mes=ExtractMonth("data_financeira"))
+            .values("ano", "mes")
+            .annotate(total=Sum("valor"))
+        )
+    }
     meses = []
     for offset in range(5, -1, -1):
         mes_ref = add_months(inicio_mes, -offset)
-        mes_fim = mes_ref.replace(day=monthrange(mes_ref.year, mes_ref.month)[1])
-        recebido = parcelas_eventos.filter(data_pagamento__range=(mes_ref, mes_fim)).aggregate(
-            total=Sum("valor_recebido")
-        )["total"] or 0
-        recebido += eventos_com_adiantamento.filter(venda__data_venda__range=(mes_ref, mes_fim)).aggregate(
-            total=Sum("adiantamento")
-        )["total"] or 0
-        pago = (
-            filtrar_empresa(Despesa.objects.filter(status="pago"), request)
-            .filter(filtro_data_financeira_despesa(mes_ref, mes_fim))
-            .aggregate(total=Sum("valor"))["total"]
-            or 0
+        chave_mes = (mes_ref.year, mes_ref.month)
+        recebido = receitas_mensais.get(chave_mes, Decimal("0.00")) + adiantamentos_mensais.get(
+            chave_mes, Decimal("0.00")
         )
+        pago = despesas_mensais.get(chave_mes, Decimal("0.00"))
         escala = max(recebido, pago, 1)
         meses.append(
             {
