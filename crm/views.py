@@ -2134,7 +2134,7 @@ def parcelas_do_request(request, form):
     valor_total = form.cleaned_data.get("valor_cobrado") or Decimal("0.00")
     valor_recebido_cartao = form.cleaned_data.get("valor_recebido_cartao")
     if form.cleaned_data.get("forma_pagamento") == "cartao" and valor_recebido_cartao:
-        valor_total = valor_recebido_cartao
+        valor_total = valor_recebido_cartao + (form.cleaned_data.get("adiantamento") or Decimal("0.00"))
     adiantamento = form.cleaned_data.get("adiantamento") or Decimal("0.00")
     valor_restante = max(valor_total - adiantamento, Decimal("0.00"))
     if total_parcelas != valor_restante:

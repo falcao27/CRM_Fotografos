@@ -378,7 +378,8 @@
 
     function valorFinanceiroContrato() {
       const valorCartao = numeroMoeda(valor("id_valor_recebido_cartao"));
-      if (pagamentoCartao() && valorCartao > 0) return valorCartao;
+      const adiantamento = numeroMoeda(valor("id_adiantamento"));
+      if (pagamentoCartao() && valorCartao > 0) return valorCartao + adiantamento;
       return numeroMoeda(valor("id_valor_cobrado"));
     }
 

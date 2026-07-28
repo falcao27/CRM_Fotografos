@@ -407,6 +407,30 @@ class EventoDocumentoFlowTests(TestCase):
         self.assertEqual(parcelas[0].vencimento.isoformat(), "2026-06-10")
         self.assertEqual(sum((parcela.valor for parcela in parcelas[1:])), 600)
 
+    def test_cartao_com_adiantamento_nao_desconta_adiantamento_duas_vezes(self):
+        dados = self.dados_evento()
+        dados.update(
+            {
+                "valor_cobrado": "2748,00",
+                "adiantamento": "600,00",
+                "forma_pagamento": "cartao",
+                "valor_recebido_cartao": "2148,00",
+                "quantidade_parcelas": "1",
+                "parcela_numero": ["1"],
+                "parcela_valor": ["2148,00"],
+                "parcela_vencimento": ["2026-08-04"],
+            }
+        )
+
+        response = self.client.post(reverse("evento_novo"), dados)
+
+        self.assertRedirects(response, reverse("eventos"))
+        evento = Evento.objects.select_related("venda").get(nome="Maria Silva")
+        parcelas = list(evento.venda.parcelas.order_by("numero"))
+        self.assertEqual(evento.valor_financeiro, Decimal("2748.00"))
+        self.assertEqual(evento.venda.valor_total, Decimal("2748.00"))
+        self.assertEqual([parcela.valor for parcela in parcelas], [Decimal("600.00"), Decimal("2148.00")])
+
     def test_adiantamento_pago_nao_marca_parcela_restante_como_paga(self):
         dados = self.dados_evento()
         dados.update(

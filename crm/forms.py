@@ -586,7 +586,11 @@ class EventoForm(forms.ModelForm):
         else:
             cleaned_data["valor_recebido_cartao"] = None
             valor_recebido_cartao = None
-        valor_financeiro = valor_recebido_cartao if forma_pagamento == "cartao" and valor_recebido_cartao else valor_cobrado
+        valor_financeiro = (
+            valor_recebido_cartao + adiantamento
+            if forma_pagamento == "cartao" and valor_recebido_cartao
+            else valor_cobrado
+        )
         if adiantamento > valor_cobrado:
             self.add_error("adiantamento", "O adiantamento nao pode ser maior que o valor cobrado.")
         if adiantamento > valor_financeiro:

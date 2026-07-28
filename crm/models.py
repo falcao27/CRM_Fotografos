@@ -532,7 +532,7 @@ class Evento(models.Model):
     @property
     def valor_financeiro(self):
         if self.forma_pagamento == "cartao" and self.valor_recebido_cartao:
-            return self.valor_recebido_cartao
+            return self.valor_recebido_cartao + self.adiantamento
         return self.valor_cobrado
 
     @property
