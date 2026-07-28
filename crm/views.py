@@ -2614,8 +2614,15 @@ def tarefa_excluir(request, pk):
 
 
 def documentos(request):
+    busca = request.GET.get("q", "").strip()
     docs = filtrar_empresa(Documento.objects.select_related("cliente", "evento"), request)
-    return render(request, "crm/documentos.html", {"documentos": docs})
+    if busca:
+        docs = docs.filter(
+            Q(cliente__nome__icontains=busca)
+            | Q(evento__nome__icontains=busca)
+            | Q(titulo__icontains=busca)
+        )
+    return render(request, "crm/documentos.html", {"documentos": docs, "busca": busca})
 
 
 def clientes_exportar_planilha(request):

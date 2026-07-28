@@ -5,7 +5,10 @@
 
 {% block content %}
 <section class="toolbar">
-  <span></span>
+  <form class="search" method="get">
+    <input type="search" name="q" value="{{ busca }}" placeholder="Buscar por nome do cliente ou evento" aria-label="Buscar documentos por nome">
+    <button class="button ghost" type="submit"><i data-lucide="search"></i>Buscar</button>
+  </form>
   <a class="button" href="{% url 'documento_novo' %}"><i data-lucide="plus"></i>Novo documento</a>
 </section>
 
@@ -57,7 +60,7 @@
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="6">Nenhum documento cadastrado.</td></tr>
+          <tr><td colspan="6">{% if busca %}Nenhum documento encontrado para "{{ busca }}".{% else %}Nenhum documento cadastrado.{% endif %}</td></tr>
         {% endfor %}
       </tbody>
     </table>

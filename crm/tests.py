@@ -55,6 +55,18 @@ class EventoDocumentoFlowTests(TestCase):
         self.assertEqual(documento.cliente, evento.cliente)
         self.assertRedirects(response, reverse("documentos"))
 
+    def test_documentos_permite_buscar_pelo_nome_do_cliente(self):
+        cliente_encontrado = Cliente.objects.create(nome="Ana Beatriz")
+        cliente_oculto = Cliente.objects.create(nome="Carlos Eduardo")
+        Documento.objects.create(cliente=cliente_encontrado, titulo="Contrato de Ana")
+        Documento.objects.create(cliente=cliente_oculto, titulo="Contrato de Carlos")
+
+        response = self.client.get(reverse("documentos"), {"q": "Ana"})
+
+        self.assertContains(response, "Contrato de Ana")
+        self.assertNotContains(response, "Contrato de Carlos")
+        self.assertContains(response, 'value="Ana"')
+
     def test_formulario_evento_exibe_campos_e_previa_do_contrato(self):
         response = self.client.get(reverse("evento_novo"))
 
