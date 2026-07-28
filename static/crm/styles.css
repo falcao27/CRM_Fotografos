@@ -1112,6 +1112,14 @@ th {
   flex: 1;
 }
 
+.document-search-panel {
+  margin-bottom: 16px;
+}
+
+.document-search-panel .search input {
+  min-width: 240px;
+}
+
 .pipeline-report {
   display: grid;
   grid-template-columns: repeat(6, minmax(150px, 1fr));

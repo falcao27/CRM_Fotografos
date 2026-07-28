@@ -66,6 +66,8 @@ class EventoDocumentoFlowTests(TestCase):
         self.assertContains(response, "Contrato de Ana")
         self.assertNotContains(response, "Contrato de Carlos")
         self.assertContains(response, 'value="Ana"')
+        self.assertContains(response, "Pesquisar")
+        self.assertContains(response, "Limpar filtro")
 
     def test_formulario_evento_exibe_campos_e_previa_do_contrato(self):
         response = self.client.get(reverse("evento_novo"))
