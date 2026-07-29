@@ -92,7 +92,10 @@ WSGI_APPLICATION = "crm_fotografos.wsgi.application"
 _database_url = os.environ.get("DATABASE_URL", "").strip()
 
 if _database_url:
-    _database_conn_max_age = int(os.environ.get("DATABASE_CONN_MAX_AGE", "0" if os.environ.get("VERCEL") else "600"))
+    # Funcoes aquecidas da Vercel podem reutilizar a conexao com o Transaction
+    # Pooler. Fechar a conexao a cada request adicionava um novo handshake TLS
+    # com o Supabase em toda troca de painel.
+    _database_conn_max_age = int(os.environ.get("DATABASE_CONN_MAX_AGE", "60" if os.environ.get("VERCEL") else "600"))
     DATABASES = {
         "default": dj_database_url.config(
             default=_database_url,
@@ -173,6 +176,10 @@ TESTING = "test" in sys.argv
 
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
+SESSION_ENGINE = os.environ.get(
+    "SESSION_ENGINE",
+    "django.contrib.sessions.backends.signed_cookies",
+)
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_SECURE = not DEBUG

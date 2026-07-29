@@ -8,6 +8,12 @@
   <link rel="icon" type="image/svg+xml" href="{% static 'crm/brand/favicon.svg' %}?v=20260601-jb-camera">
   <link rel="stylesheet" href="{% static 'crm/styles.css' %}?v=20260704-reports-period-fit">
   <script src="https://unpkg.com/lucide@latest" defer></script>
+  <script>
+    window.si = window.si || function () {
+      (window.siq = window.siq || []).push(arguments);
+    };
+  </script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
 </head>
 <body>
   <aside class="sidebar" id="sidebar">
@@ -115,6 +121,36 @@
           setMenuOpen(false);
         });
       });
+
+      // Antecipar apenas os paineis seguros do menu reduz a espera pela
+      // funcao serverless sem executar a navegacao ou alterar dados.
+      const prefetchedUrls = new Set();
+      function prefetchPanel(link) {
+        if (!link || prefetchedUrls.has(link.href)) return;
+        const url = new URL(link.href, window.location.href);
+        if (
+          url.origin !== window.location.origin ||
+          url.pathname === window.location.pathname ||
+          url.pathname.startsWith("/logout") ||
+          url.pathname.startsWith("/admin/")
+        ) return;
+        prefetchedUrls.add(link.href);
+        const prefetch = document.createElement("link");
+        prefetch.rel = "prefetch";
+        prefetch.as = "document";
+        prefetch.href = link.href;
+        document.head.appendChild(prefetch);
+      }
+
+      sidebar.addEventListener("pointerover", function (event) {
+        prefetchPanel(event.target.closest("a"));
+      });
+      sidebar.addEventListener("focusin", function (event) {
+        prefetchPanel(event.target.closest("a"));
+      });
+      sidebar.addEventListener("touchstart", function (event) {
+        prefetchPanel(event.target.closest("a"));
+      }, { passive: true });
 
       document.addEventListener("keydown", function (event) {
         if (event.key === "Escape" && sidebar.classList.contains("open")) {
