@@ -2870,6 +2870,36 @@ input[readonly] {
   border-bottom: 0;
 }
 
+.month-alert-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 64px;
+  padding: 14px 16px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.month-alert-link:hover {
+  background: var(--surface-2);
+}
+
+.month-alert-link > div {
+  display: grid;
+  gap: 4px;
+}
+
+.month-alert-link span {
+  color: var(--accent-dark);
+  font-weight: 800;
+}
+
+.month-alert-link > svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
 .payment-client.has-overdue {
   border-color: #ffd0ca;
   background: #fff4f2;

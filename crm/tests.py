@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from importlib import import_module
 from io import BytesIO
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.apps import apps as django_apps
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -637,6 +638,43 @@ class EventoDocumentoFlowTests(TestCase):
 
 
 class ClientePlanilhaTests(TestCase):
+    @patch("django.utils.timezone.localdate", return_value=date(2026, 9, 14))
+    def test_alertas_exibe_todas_as_oportunidades_do_mes(self, localdate_mock):
+        clientes_incluidos = [
+            Cliente.objects.create(nome="Oportunidade inicio", proxima_oportunidade=date(2026, 9, 1)),
+            Cliente.objects.create(nome="Oportunidade fim", proxima_oportunidade=date(2026, 9, 30)),
+        ]
+        Cliente.objects.create(nome="Oportunidade mes anterior", proxima_oportunidade=date(2026, 8, 31))
+        Cliente.objects.create(nome="Oportunidade mes seguinte", proxima_oportunidade=date(2026, 10, 1))
+
+        response = self.client.get(reverse("alertas"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {cliente.nome for cliente in response.context["clientes_recompra"]},
+            {cliente.nome for cliente in clientes_incluidos + [Cliente.objects.get(nome="Oportunidade mes anterior")]},
+        )
+        grupos = response.context["grupos_recompra"]
+        self.assertEqual([grupo["titulo"] for grupo in grupos], ["Setembro 2026", "Agosto 2026"])
+        self.assertContains(response, "Setembro 2026")
+        self.assertContains(response, "Agosto 2026")
+        self.assertNotContains(response, "Outubro 2026")
+        self.assertNotContains(response, "Oportunidade inicio")
+
+    @patch("django.utils.timezone.localdate", return_value=date(2026, 9, 14))
+    def test_alertas_recompra_mes_exibe_apenas_clientes_do_mes(self, localdate_mock):
+        cliente_setembro = Cliente.objects.create(
+            nome="Cliente Setembro", proxima_oportunidade=date(2026, 9, 20)
+        )
+        Cliente.objects.create(nome="Cliente Agosto", proxima_oportunidade=date(2026, 8, 20))
+
+        response = self.client.get(reverse("clientes_recompra_mes", args=[2026, 9]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, cliente_setembro.nome)
+        self.assertNotContains(response, "Cliente Agosto")
+        self.assertContains(response, "Voltar para alertas")
+
     def test_planilha_exportada_nao_pede_proxima_oportunidade(self):
         response = self.client.get(reverse("clientes_exportar_planilha"))
 

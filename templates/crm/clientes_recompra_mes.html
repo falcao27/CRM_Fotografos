@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block page_title %}Clientes de {{ mes_titulo }}{% endblock %}
+{% block page_subtitle %}Clientes para contato de nova venda neste mes.{% endblock %}
+
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h2>{{ mes_titulo }}</h2>
+    <p class="page-note">Clientes com oportunidade de contato neste mes.</p>
+  </div>
+  <a class="button ghost" href="{% url 'alertas' %}">
+    <i data-lucide="arrow-left"></i>Voltar para alertas
+  </a>
+</section>
+
+<section class="panel">
+  <div class="list">
+    {% for cliente in clientes %}
+      <div class="list-row alert-card">
+        <div>
+          <strong>{{ cliente.nome }}</strong>
+          <span>Contato para possivel orcamento</span>
+          <small>Data de contato: {{ cliente.proxima_oportunidade|date:"d/m/Y" }} - {{ cliente.telefone }}</small>
+        </div>
+        <a class="icon-link alert-card-action" href="{% url 'cliente_editar' cliente.pk %}" title="Editar cliente">
+          <i data-lucide="pencil"></i>
+        </a>
+      </div>
+    {% empty %}
+      <p class="empty">Nenhum cliente com oportunidade neste mes.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

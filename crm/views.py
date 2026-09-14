@@ -1545,6 +1545,8 @@ def parcela_excluir(request, pk):
 
 def alertas(request):
     hoje = timezone.localdate()
+    inicio_mes = hoje.replace(day=1)
+    fim_mes = hoje.replace(day=monthrange(hoje.year, hoje.month)[1])
     agora = timezone.localtime()
     parcelas = filtrar_parcelas_empresa(Parcela.objects.select_related("venda", "venda__cliente"), request).exclude(status="pago").filter(
         Q(vencimento__lt=hoje) | Q(lembrete_em__lte=hoje)
@@ -1577,7 +1579,35 @@ def alertas(request):
             else:
                 tarefa.alerta_estado = "passado"
                 tarefa.alerta_mensagem = "Horario ja passou. Confirme se o compromisso foi realizado."
-    clientes_recompra = [cliente for cliente in filtrar_empresa(Cliente.objects.all(), request) if cliente.precisa_alerta_recompra]
+    clientes_recompra = filtrar_empresa(
+        Cliente.objects.filter(proxima_oportunidade__lte=fim_mes).order_by(
+            "-proxima_oportunidade", "nome"
+        ),
+        request,
+    )
+    grupos_recompra = {}
+    for cliente in clientes_recompra:
+        chave = cliente.proxima_oportunidade.replace(day=1)
+        grupo = grupos_recompra.setdefault(
+            chave,
+            {
+                "chave": chave,
+                "titulo": f"{MESES_PT[chave.month - 1]} {chave.year}",
+                "clientes": [],
+            },
+        )
+        grupo["clientes"].append(cliente)
+    grupos_recompra.setdefault(
+        inicio_mes,
+        {
+            "chave": inicio_mes,
+            "titulo": f"{MESES_PT[inicio_mes.month - 1]} {inicio_mes.year}",
+            "clientes": [],
+        },
+    )
+    grupos_recompra = [
+        grupos_recompra[chave] for chave in sorted(grupos_recompra, reverse=True)
+    ]
     clientes_evento_hoje = filtrar_empresa(Cliente.objects.filter(data_evento=hoje), request)
     clientes_edicao = filtrar_empresa(Cliente.objects.filter(data_evento=hoje - timedelta(days=1)), request)
     clientes_copia_cartao = Cliente.objects.none()
@@ -1594,12 +1624,36 @@ def alertas(request):
             "parcelas": parcelas,
             "compromissos_hoje": compromissos_hoje,
             "clientes_recompra": clientes_recompra,
+            "grupos_recompra": grupos_recompra,
             "clientes_evento_hoje": clientes_evento_hoje,
             "clientes_edicao": clientes_edicao,
             "clientes_copia_cartao": clientes_copia_cartao,
             "lembretes_anuais": lembretes_anuais,
+            "mes_recompra": f"{MESES_PT[hoje.month - 1]} {hoje.year}",
             "hoje": hoje,
             "agora": agora,
+        },
+    )
+
+
+def clientes_recompra_mes(request, ano, mes):
+    hoje = timezone.localdate()
+    if mes < 1 or mes > 12 or (ano, mes) > (hoje.year, hoje.month):
+        return redirect("alertas")
+    inicio = date(ano, mes, 1)
+    fim = inicio.replace(day=monthrange(ano, mes)[1])
+    clientes = filtrar_empresa(
+        Cliente.objects.filter(proxima_oportunidade__range=(inicio, fim)).order_by(
+            "proxima_oportunidade", "nome"
+        ),
+        request,
+    )
+    return render(
+        request,
+        "crm/clientes_recompra_mes.html",
+        {
+            "clientes": clientes,
+            "mes_titulo": f"{MESES_PT[mes - 1]} {ano}",
         },
     )
 

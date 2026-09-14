@@ -94,6 +94,11 @@ urlpatterns = [
     path("agenda/<int:pk>/editar/", views.tarefa_form, name="tarefa_editar"),
     path("agenda/<int:pk>/excluir/", views.tarefa_excluir, name="tarefa_excluir"),
     path("agenda/<int:pk>/concluir/", views.tarefa_marcar_concluida, name="tarefa_marcar_concluida"),
+    path(
+        "alertas/recompra/<int:ano>/<int:mes>/",
+        views.clientes_recompra_mes,
+        name="clientes_recompra_mes",
+    ),
     path("documentos/", views.documentos, name="documentos"),
     path("documentos/novo/", views.documento_form, name="documento_novo"),
     path("documentos/<int:pk>/editar/", views.documento_form, name="documento_editar"),
