@@ -1,399 +1,127 @@
-# README - Instalacao do CRM Fotografos no PC do cliente
+# CRM Fotógrafos
 
-Este projeto e um sistema local em Django para organizar clientes, vendas, financeiro, agenda, contratos, documentos e oportunidades de uma empresa de fotografia.
+CRM web para estúdios e fotógrafos organizarem clientes, vendas, contratos, agenda e financeiro em um só lugar. O sistema é multiempresa: cada estúdio enxerga apenas os próprios dados, e um painel de administração central acompanha as empresas, contratos e cobranças da plataforma.
 
-O cliente usa o sistema pelo navegador, como se fosse um programa instalado no computador.
+**Sistema no ar:** https://crm-fotografos.vercel.app
 
-## 1. O que o cliente precisa ter instalado
+> O acesso exige login. As telas abaixo foram geradas com os dados fictícios do comando `seed_demo`.
 
-O cliente nao precisa instalar VS Code.
+## Telas
 
-Ele so precisa ter:
+| Dashboard | Pipeline de vendas |
+| --- | --- |
+| ![Dashboard com receitas, despesas, tarefas e agenda da semana](docs/screenshots/dashboard.png) | ![Pipeline de vendas em colunas por etapa](docs/screenshots/pipeline.png) |
 
-- Windows
-- Python 3 instalado
-- Navegador, como Chrome, Edge ou Firefox
+| Agenda | Documentos e contratos |
+| --- | --- |
+| ![Agenda com compromissos, ensaios e entregas](docs/screenshots/agenda.png) | ![Lista de contratos e documentos com status de envio](docs/screenshots/documentos.png) |
 
-Durante a instalacao do Python, marque a opcao:
+| Clientes | Login | Mobile |
+| --- | --- | --- |
+| ![Cadastro de clientes](docs/screenshots/clientes.png) | ![Tela de login com acesso de cliente e de admin](docs/screenshots/login.png) | <img src="docs/screenshots/dashboard-mobile.png" alt="Dashboard no celular" width="220"> |
 
-```text
-Add python.exe to PATH
+## Funcionalidades
+
+- **Dashboard** com receitas, despesas, saldo, contratos do mês, tarefas e agenda da semana.
+- **Pipeline de vendas** do primeiro contato ao fechamento, com motivos de perda e reuniões.
+- **Financeiro** com vendas, parcelas, adiantamentos, recebimentos parciais e valor líquido no cartão.
+- **Receitas e despesas** com relatórios mensais em PDF.
+- **Eventos e produção**: painéis de edição e de álbum para acompanhar a entrega de cada trabalho.
+- **Agenda** de ensaios, reuniões, entregas e pagamentos a receber.
+- **Contratos e documentos** gerados em PDF, com envio por WhatsApp ou e-mail e controle de assinatura.
+- **Alertas** de parcelas vencidas, cobranças ativas e oportunidades de recompra.
+- **Clientes** com importação e exportação por planilha.
+- **Multiempresa** com perfis de acesso (admin master, admin da empresa e usuário) e painel central da plataforma.
+- **Login** por usuário e senha ou conta Google, com recuperação de senha por e-mail.
+
+## Tecnologias
+
+| Camada | Tecnologia |
+| --- | --- |
+| Backend | Python 3.12, Django 5 |
+| Banco de dados | PostgreSQL (Supabase) em produção, SQLite no ambiente local |
+| Segurança de dados | Row Level Security no Supabase, autenticação por cookie JWT |
+| Arquivos | Supabase Storage |
+| Frontend | Django Templates, HTML, CSS e JavaScript |
+| Integrações | WhatsApp Cloud API, SMTP, Google OAuth |
+| Deploy | Vercel (região `gru1`), WhiteNoise para arquivos estáticos |
+
+## Como rodar localmente
+
+Pré-requisitos: Python 3.12 ou superior e Git.
+
+```bash
+git clone https://github.com/falcao27/CRM_Fotografos.git
+cd CRM_Fotografos
+
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# Linux/macOS
+source .venv/bin/activate
+
+pip install -r requirements.txt
 ```
 
-Isso e muito importante. Se essa opcao nao for marcada, os arquivos `.bat` podem nao conseguir encontrar o Python.
+Crie o arquivo de configuração a partir do exemplo:
 
-## 2. Baixar ou copiar o projeto
-
-Copie a pasta completa do projeto para o computador do cliente.
-
-Recomendacao:
-
-```text
-C:\CRM_Fotografos
+```bash
+# Windows
+copy .env.example .env
+# Linux/macOS
+cp .env.example .env
 ```
 
-Evite deixar em Downloads, Area de Trabalho ou pasta temporaria.
+Sem `DATABASE_URL` preenchida, o projeto usa um banco SQLite local, então nenhuma conta externa é necessária para testar.
 
-A pasta deve conter arquivos como:
-
-```text
-manage.py
-requirements.txt
-db.sqlite3
-instalar_cliente_windows.bat
-criar_atalhos_windows.bat
-iniciar_crm.bat
-iniciar_crm_oculto.vbs
-backup_crm.bat
-backup_crm_silencioso.bat
-configurar_backup_automatico.bat
+```bash
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py seed_demo      # opcional: cria clientes, vendas e tarefas fictícias
+python manage.py runserver
 ```
 
-## 3. Primeira instalacao
+Acesse http://127.0.0.1:8000 e entre com o usuário criado.
 
-Entre na pasta do projeto:
+### Testes
 
-```text
-C:\CRM_Fotografos
+```bash
+python manage.py test
 ```
 
-Clique duas vezes em:
+## Variáveis de ambiente
+
+Todas estão descritas em [`.env.example`](.env.example). O arquivo `.env` real nunca é versionado.
+
+| Variável | Para que serve |
+| --- | --- |
+| `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` | Configuração básica do Django |
+| `DATABASE_URL` | Conexão com o PostgreSQL do Supabase (vazio usa SQLite local) |
+| `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_STORAGE_BUCKET` | Armazenamento de contratos e anexos |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | Login com Google |
+| `CRM_MASTER_ADMIN_EMAIL` | E-mail do administrador da plataforma |
+| `WHATSAPP_*` | Envio de documentos pela WhatsApp Cloud API |
+| `EMAIL_*`, `DEFAULT_FROM_EMAIL` | Envio de e-mails por SMTP |
+
+## Estrutura
 
 ```text
-instalar_cliente_windows.bat
+crm/                 App principal: models, views, services, PDF, middleware e testes
+crm/management/      Comandos seed_demo e setup_supabase_storage
+crm/storage/         Backend de arquivos para o Supabase Storage
+crm_fotografos/      Configurações do projeto Django
+templates/crm/       Telas do sistema
+static/crm/          CSS e identidade visual
+supabase/            Scripts SQL de auditoria e correção de RLS
+docs/                Prints e guia de instalação local
 ```
 
-Esse arquivo vai:
+## Deploy
 
-- Criar o ambiente Python local `.venv`
-- Instalar o Django
-- Instalar as dependencias do projeto
-- Aplicar as migrations
-- Preparar o banco `db.sqlite3`
-- Perguntar se voce quer criar o usuario administrador
+O deploy de produção roda na Vercel. O `build.sh` coleta os arquivos estáticos e aplica as migrations; as variáveis de ambiente ficam cadastradas no painel da Vercel e o banco usa o Transaction Pooler do Supabase.
 
-Quando aparecer a criacao do admin, preencha:
+O projeto também pode ser instalado como programa local em um computador Windows, com atalho na área de trabalho e backup automático. O passo a passo está em [docs/INSTALACAO_WINDOWS.md](docs/INSTALACAO_WINDOWS.md).
 
-```text
-Username: admin
-Email address: pode deixar vazio ou colocar o e-mail do cliente
-Password: crie uma senha
-Password again: repita a senha
-```
+## Autor
 
-Importante: guarde essa senha.
-
-Se o banco `db.sqlite3` ja vier pronto com usuario criado, voce pode responder `N` quando o instalador perguntar se deseja criar o admin.
-
-## 4. Criar atalho na Area de Trabalho
-
-Depois da instalacao, clique duas vezes em:
-
-```text
-criar_atalhos_windows.bat
-```
-
-Esse arquivo vai criar um atalho chamado:
-
-```text
-CRM Fotografos
-```
-
-na Area de Trabalho.
-
-Ele tambem vai perguntar se voce quer abrir o sistema automaticamente quando o Windows ligar.
-
-Recomendacao:
-
-```text
-S
-```
-
-Assim, quando o cliente ligar o computador, o CRM ja inicia.
-
-## 5. Configurar backup automatico
-
-O arquivo `criar_atalhos_windows.bat` tambem pergunta se voce quer configurar backup automatico diario.
-
-Recomendacao:
-
-```text
-S
-```
-
-O backup sera feito todos os dias as:
-
-```text
-18:00
-```
-
-Os backups ficam em:
-
-```text
-Documentos\Backups_CRM_Fotografos
-```
-
-Exemplo:
-
-```text
-C:\Users\NOME_DO_CLIENTE\Documents\Backups_CRM_Fotografos
-```
-
-Cada backup fica em uma pasta com data e hora, tipo:
-
-```text
-Backup_CRM_2026-06-01_18-00-00
-```
-
-Se a criacao do backup automatico der erro, execute o arquivo abaixo como administrador:
-
-```text
-configurar_backup_automatico.bat
-```
-
-## 6. Como o cliente vai usar no dia a dia
-
-O cliente so precisa clicar no atalho:
-
-```text
-CRM Fotografos
-```
-
-na Area de Trabalho.
-
-O sistema vai abrir no navegador em:
-
-```text
-http://127.0.0.1:8000/
-```
-
-Se pedir login, use o usuario admin criado na instalacao.
-
-## 7. Como iniciar manualmente
-
-Se o atalho nao abrir ou se voce quiser testar direto pela pasta do projeto, clique duas vezes em:
-
-```text
-iniciar_crm.bat
-```
-
-Esse arquivo abre o navegador e inicia o servidor local do Django.
-
-## 8. Como fazer backup manual
-
-Se quiser fazer backup manual a qualquer momento, entre na pasta do projeto e clique duas vezes em:
-
-```text
-backup_crm.bat
-```
-
-Ele copia:
-
-```text
-db.sqlite3
-media\
-```
-
-para:
-
-```text
-Documentos\Backups_CRM_Fotografos
-```
-
-## 9. O que precisa ser salvo no backup
-
-O banco principal e:
-
-```text
-db.sqlite3
-```
-
-Nele ficam:
-
-- Clientes
-- Eventos
-- Parcelas
-- Usuarios
-- Senhas
-- Dados financeiros
-- Informacoes cadastradas pelo sistema
-
-A pasta de arquivos e:
-
-```text
-media\
-```
-
-Nela ficam anexos, PDFs, contratos assinados e arquivos enviados, caso o sistema use isso.
-
-Entao o backup importante e sempre:
-
-```text
-db.sqlite3
-media\
-```
-
-## 10. Cuidados importantes
-
-Nao apagar estes arquivos e pastas:
-
-```text
-db.sqlite3
-media\
-.venv\
-manage.py
-crm\
-crm_fotografos\
-templates\
-static\
-```
-
-Nao mover a pasta do sistema depois de criar os atalhos.
-
-Se precisar mover, crie os atalhos novamente usando:
-
-```text
-criar_atalhos_windows.bat
-```
-
-## 11. Se o sistema nao abrir
-
-Entre na pasta do projeto e clique em:
-
-```text
-iniciar_crm.bat
-```
-
-Se aparecer erro, verifique:
-
-- Python instalado corretamente
-- A pasta `.venv` existe
-- O arquivo `db.sqlite3` existe
-- A porta `8000` nao esta sendo usada por outro programa
-
-Se a porta estiver ocupada, feche outros terminais ou reinicie o computador.
-
-## 12. Como restaurar um backup
-
-1. Feche o sistema.
-2. Va ate a pasta de backups:
-
-```text
-Documentos\Backups_CRM_Fotografos
-```
-
-3. Escolha a pasta do backup desejado.
-4. Copie o arquivo:
-
-```text
-db.sqlite3
-```
-
-5. Cole dentro da pasta principal do sistema:
-
-```text
-C:\CRM_Fotografos
-```
-
-6. Se existir pasta `media` no backup, copie ela tambem para:
-
-```text
-C:\CRM_Fotografos
-```
-
-7. Abra o sistema novamente pelo atalho.
-
-## 13. Fluxo resumido para instalacao
-
-No PC do cliente:
-
-1. Instalar Python 3 com `Add python.exe to PATH`
-2. Copiar projeto para `C:\CRM_Fotografos`
-3. Rodar `instalar_cliente_windows.bat`
-4. Criar usuario admin, se necessario
-5. Rodar `criar_atalhos_windows.bat`
-6. Aceitar abrir com Windows
-7. Aceitar backup automatico
-8. Abrir `CRM Fotografos` pela Area de Trabalho
-
-Pronto. O cliente usa como um programa normal, clicando no atalho.
-
-## 14. Acesso ao sistema
-
-Com o servidor rodando, abra:
-
-```text
-http://127.0.0.1:8000/
-```
-
-Admin do banco:
-
-```text
-http://127.0.0.1:8000/admin/
-```
-
-## 15. Menu do CRM
-
-### Painel
-
-Mostra a visao geral do negocio: receitas, despesas, saldo, contratos, trabalhos do mes, tarefas, oportunidades, documentos pendentes e alertas.
-
-### Financeiro
-
-Controla vendas, pagamentos, parcelas, vencimentos, cobrancas e status de cada cliente.
-
-### Despesas
-
-Registra custos da empresa, como estudio, software, anuncios, impressao, equipamentos e servicos.
-
-### Pipeline
-
-Acompanha leads e oportunidades nas etapas de novo lead, orcamento, negociacao, fechado e perdido.
-
-### Agenda
-
-Centraliza compromissos, ensaios, reunioes, entregas, tarefas e pagamentos a receber.
-
-### Clientes
-
-Cadastro principal dos contatos, com telefone, e-mail, origem, tipo de evento, data do evento e proxima oportunidade.
-
-### Documentos
-
-Acompanha contratos, autorizacoes, documentos enviados, documentos pendentes e PDFs.
-
-### Alertas
-
-Mostra parcelas vencidas, cobrancas ativas e oportunidades comerciais proximas.
-
-### Banco/Admin
-
-Painel administrativo nativo do Django para editar registros diretamente no banco.
-
-## 16. Envio de documentos por WhatsApp e e-mail
-
-A tela de documentos pode enviar mensagens, mas precisa de credenciais externas configuradas.
-
-Para WhatsApp Cloud API / Meta, edite o arquivo `.env`:
-
-```text
-WHATSAPP_PHONE_NUMBER_ID=SEU_PHONE_NUMBER_ID
-WHATSAPP_ACCESS_TOKEN=SEU_TOKEN_DE_ACESSO
-WHATSAPP_API_VERSION=v20.0
-```
-
-Para e-mail SMTP, edite o arquivo `.env`:
-
-```text
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=587
-EMAIL_USE_TLS=1
-EMAIL_HOST_USER=seuemail@gmail.com
-EMAIL_HOST_PASSWORD=sua_senha_de_app
-DEFAULT_FROM_EMAIL=seuemail@gmail.com
-```
-
-Depois de alterar o `.env`, reinicie o sistema pelo atalho.
-
-Enquanto a API do WhatsApp nao estiver configurada, use o botao de abrir WhatsApp Web dentro do sistema e envie manualmente.
-
+Desenvolvido por [Jefferson Falcão](https://github.com/falcao27).
