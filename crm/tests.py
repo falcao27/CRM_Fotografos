@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from importlib import import_module
 from io import BytesIO
 from decimal import Decimal
+import os
 from unittest.mock import patch
 
 from django.apps import apps as django_apps
@@ -873,6 +874,25 @@ class DespesasTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "application/pdf")
         self.assertIn(b"VideoMake", response.content)
+
+
+class AcessosIniciaisTests(TestCase):
+    def criar_acessos(self, **variaveis):
+        migracao = import_module("crm.migrations.0023_seed_auth_initial")
+        User.objects.filter(username__in=["admin_master", "joaobosco"]).delete()
+        ambiente = {k: v for k, v in os.environ.items() if not k.startswith("CRM_SEED_")}
+        with patch.dict(os.environ, {**ambiente, **variaveis}, clear=True):
+            migracao.criar_acessos_iniciais(django_apps, None)
+
+    def test_sem_variaveis_contas_ficam_sem_senha_utilizavel(self):
+        self.criar_acessos()
+        self.assertFalse(User.objects.get(username="admin_master").has_usable_password())
+        self.assertFalse(User.objects.get(username="joaobosco").has_usable_password())
+
+    def test_senhas_iniciais_vem_das_variaveis_de_ambiente(self):
+        self.criar_acessos(CRM_SEED_ADMIN_PASSWORD="senha-admin-teste", CRM_SEED_EMPRESA_PASSWORD="senha-empresa-teste")
+        self.assertTrue(User.objects.get(username="admin_master").check_password("senha-admin-teste"))
+        self.assertTrue(User.objects.get(username="joaobosco").check_password("senha-empresa-teste"))
 
 
 class MultiEmpresaIsolationTests(TestCase):

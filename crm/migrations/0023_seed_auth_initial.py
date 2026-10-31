@@ -1,5 +1,13 @@
+import os
+
 from django.db import migrations
 from django.contrib.auth.hashers import make_password
+
+
+def senha_inicial(variavel):
+    # Sem a variavel de ambiente a conta fica sem senha utilizavel, ate ser
+    # definida com "python manage.py changepassword <usuario>".
+    return make_password(os.environ.get(variavel) or None)
 
 
 def criar_acessos_iniciais(apps, schema_editor):
@@ -26,7 +34,7 @@ def criar_acessos_iniciais(apps, schema_editor):
         },
     )
     if created:
-        admin.password = make_password("Admin@2026")
+        admin.password = senha_inicial("CRM_SEED_ADMIN_PASSWORD")
         admin.save()
     PerfilUsuario.objects.get_or_create(user=admin, defaults={"papel": "admin_master"})
 
@@ -40,7 +48,7 @@ def criar_acessos_iniciais(apps, schema_editor):
         },
     )
     if created:
-        usuario.password = make_password("Foto@2026")
+        usuario.password = senha_inicial("CRM_SEED_EMPRESA_PASSWORD")
         usuario.save()
     PerfilUsuario.objects.get_or_create(user=usuario, defaults={"empresa": empresa, "papel": "empresa_admin"})
 
