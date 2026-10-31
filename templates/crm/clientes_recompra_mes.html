@@ -23,9 +23,22 @@
           <span>Contato para possivel orcamento</span>
           <small>Data de contato: {{ cliente.proxima_oportunidade|date:"d/m/Y" }} - {{ cliente.telefone }}</small>
         </div>
-        <a class="icon-link alert-card-action" href="{% url 'cliente_editar' cliente.pk %}" title="Editar cliente">
-          <i data-lucide="pencil"></i>
-        </a>
+        <div class="alert-card-actions">
+          {% if cliente.whatsapp_url %}
+            <a
+              class="icon-link alert-card-action"
+              href="{{ cliente.whatsapp_url }}"
+              target="_blank"
+              rel="noopener"
+              title="Abrir WhatsApp com mensagem para fechar nova venda"
+            >
+              <i data-lucide="message-circle"></i>
+            </a>
+          {% endif %}
+          <a class="icon-link alert-card-action" href="{% url 'cliente_editar' cliente.pk %}" title="Editar cliente">
+            <i data-lucide="pencil"></i>
+          </a>
+        </div>
       </div>
     {% empty %}
       <p class="empty">Nenhum cliente com oportunidade neste mes.</p>

@@ -151,6 +151,38 @@ def link_whatsapp_album(evento):
     return f"https://wa.me/{numero}?text={quote(mensagem)}"
 
 
+def link_whatsapp_recompra(cliente):
+    numero = normalizar_whatsapp(cliente.telefone)
+    if not numero:
+        return ""
+
+    eventos = sorted(
+        (evento for evento in cliente.eventos.all() if evento.data_festa),
+        key=lambda evento: evento.data_festa,
+    )
+    if eventos:
+        ultimo = eventos[-1]
+        descricao = ultimo.get_tipo_evento_display() or ultimo.nome
+        if ultimo.aniversariante:
+            descricao += f" de {ultimo.aniversariante}"
+        data_evento = ultimo.data_festa
+    else:
+        descricao = cliente.tipo_evento or "evento"
+        data_evento = cliente.data_evento
+    if data_evento:
+        descricao += f" no dia {data_evento:%d/%m/%Y}"
+
+    mensagem = (
+        f"Ola, {cliente.nome}! Tudo bem?\n\n"
+        f"Foi um prazer registrar o seu evento: {descricao}. "
+        "Estou entrando em contato porque estou com a agenda aberta para os proximos eventos "
+        "e gostaria de saber se voce tem alguma nova data ou comemoracao chegando.\n\n"
+        "Para clientes que ja fecharam comigo, consigo preparar uma condicao especial. "
+        "Posso te enviar um orcamento sem compromisso?"
+    )
+    return f"https://wa.me/{numero}?text={quote(mensagem)}"
+
+
 def add_months(data, meses):
     mes = data.month - 1 + meses
     ano = data.year + mes // 12
@@ -1643,11 +1675,13 @@ def clientes_recompra_mes(request, ano, mes):
     inicio = date(ano, mes, 1)
     fim = inicio.replace(day=monthrange(ano, mes)[1])
     clientes = filtrar_empresa(
-        Cliente.objects.filter(proxima_oportunidade__range=(inicio, fim)).order_by(
-            "proxima_oportunidade", "nome"
-        ),
+        Cliente.objects.filter(proxima_oportunidade__range=(inicio, fim))
+        .prefetch_related("eventos")
+        .order_by("proxima_oportunidade", "nome"),
         request,
     )
+    for cliente in clientes:
+        cliente.whatsapp_url = link_whatsapp_recompra(cliente)
     return render(
         request,
         "crm/clientes_recompra_mes.html",
